@@ -7,6 +7,17 @@ import 'services/openrouter_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Catch all Flutter framework errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    print('=== FLUTTER ERROR ===');
+    print('Error: ${details.exception}');
+    print('Stack trace:');
+    print(details.stack);
+    print('Context: ${details.context}');
+    print('===================');
+  };
+
   runApp(const MyApp());
 }
 
@@ -31,6 +42,18 @@ class MyApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
+        builder: (context, widget) {
+          ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
+            print('=== ERROR WIDGET BUILDER ===');
+            print('Error: ${errorDetails.exception}');
+            print('Stack: ${errorDetails.stack}');
+            print('==========================');
+            return Scaffold(
+              body: Center(child: Text('Error: ${errorDetails.exception}')),
+            );
+          };
+          return widget!;
+        },
         home: const AuthCheckScreen(),
         routes: {
           '/conversations': (context) => const ConversationListScreen(),

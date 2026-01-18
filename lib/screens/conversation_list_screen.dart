@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../providers/conversation_provider.dart';
 import '../models/conversation.dart';
 import '../services/default_model_service.dart';
+import '../services/database_service.dart';
+import '../widgets/mcp_server_selection_dialog.dart';
 import 'chat_screen.dart';
 import 'model_picker_screen.dart';
 import 'settings_screen.dart';
@@ -107,17 +109,40 @@ class ConversationListScreen extends StatelessWidget {
           }
 
           if (selectedModel != null && context.mounted) {
-            final provider = context.read<ConversationProvider>();
-            final conversation = await provider.createConversation(
-              model: selectedModel,
+            // Show MCP server selection dialog
+            final selectedServerIds = await showDialog<List<String>>(
+              context: context,
+              builder: (context) => const McpServerSelectionDialog(),
             );
+
+            // User cancelled
+            if (selectedServerIds == null && context.mounted) {
+              return;
+            }
+
             if (context.mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(conversation: conversation),
-                ),
+              final provider = context.read<ConversationProvider>();
+              final conversation = await provider.createConversation(
+                model: selectedModel,
               );
+
+              // Save MCP server associations
+              if (selectedServerIds != null && selectedServerIds.isNotEmpty) {
+                await DatabaseService.instance.setConversationMcpServers(
+                  conversation.id,
+                  selectedServerIds,
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ChatScreen(conversation: conversation),
+                  ),
+                );
+              }
             }
           }
         },

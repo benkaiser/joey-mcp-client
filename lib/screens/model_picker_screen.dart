@@ -38,6 +38,16 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
         _models = models;
         _isLoading = false;
       });
+    } on OpenRouterAuthException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Authentication expired. Please log in again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();

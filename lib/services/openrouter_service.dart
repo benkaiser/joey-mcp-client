@@ -4,6 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import 'dart:math';
 
+/// Exception thrown when authentication fails (e.g., expired token)
+class OpenRouterAuthException implements Exception {
+  final String message;
+  OpenRouterAuthException(this.message);
+
+  @override
+  String toString() => 'OpenRouterAuthException: $message';
+}
+
 class OpenRouterService {
   static const String _apiKeyKey = 'openrouter_api_key';
   static const String _authUrl = 'https://openrouter.ai/auth';
@@ -88,6 +97,9 @@ class OpenRouterService {
       if (response.statusCode == 200 && response.data != null) {
         final key = response.data['key'] as String?;
         if (key == null || key.isEmpty) {
+          print(
+            'OpenRouter: exchangeCodeForKey failed - no key in response: ${response.data}',
+          );
           throw Exception('Invalid response: API key not found');
         }
 
@@ -100,9 +112,19 @@ class OpenRouterService {
 
         return key;
       } else {
+        print(
+          'OpenRouter: exchangeCodeForKey failed with status ${response.statusCode}: ${response.data}',
+        );
         throw Exception('Failed to exchange code: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      print('OpenRouter: exchangeCodeForKey DioException:');
+      print('  Status: ${e.response?.statusCode}');
+      print('  Response: ${e.response?.data}');
+      print('  Message: ${e.message}');
+      throw Exception('Error exchanging code for key: ${e.message}');
     } catch (e) {
+      print('OpenRouter: exchangeCodeForKey unexpected error: $e');
       throw Exception('Error exchanging code for key: $e');
     }
   }
@@ -111,6 +133,7 @@ class OpenRouterService {
   Future<Map<String, dynamic>> chatCompletion({
     required String model,
     required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
     bool stream = false,
   }) async {
     final apiKey = await getApiKey();
@@ -119,9 +142,19 @@ class OpenRouterService {
     }
 
     try {
+      final requestData = {
+        'model': model,
+        'messages': messages,
+        'stream': stream,
+      };
+
+      if (tools != null && tools.isNotEmpty) {
+        requestData['tools'] = tools;
+      }
+
       final response = await _dio.post(
         'https://openrouter.ai/api/v1/chat/completions',
-        data: {'model': model, 'messages': messages, 'stream': stream},
+        data: requestData,
         options: Options(
           headers: {
             'Authorization': 'Bearer $apiKey',
@@ -136,9 +169,27 @@ class OpenRouterService {
       if (response.statusCode == 200 && response.data != null) {
         return response.data as Map<String, dynamic>;
       } else {
+        print(
+          'OpenRouter: chatCompletion failed with status ${response.statusCode}: ${response.data}',
+        );
         throw Exception('Chat completion failed: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      print('OpenRouter: chatCompletion DioException:');
+      print('  Status: ${e.response?.statusCode}');
+      print('  Response: ${e.response?.data}');
+      print('  Message: ${e.message}');
+      if (e.response?.statusCode == 401) {
+        // Token expired or invalid - clear it and prompt re-auth
+        print('OpenRouter: 401 Unauthorized - clearing token');
+        await logout();
+        throw OpenRouterAuthException(
+          'Authentication expired. Please log in again.',
+        );
+      }
+      throw Exception('Error making chat completion request: ${e.message}');
     } catch (e) {
+      print('OpenRouter: chatCompletion unexpected error: $e');
       throw Exception('Error making chat completion request: $e');
     }
   }
@@ -147,6 +198,7 @@ class OpenRouterService {
   Stream<String> chatCompletionStream({
     required String model,
     required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
   }) async* {
     final apiKey = await getApiKey();
     if (apiKey == null) {
@@ -154,9 +206,19 @@ class OpenRouterService {
     }
 
     try {
+      final requestData = {
+        'model': model,
+        'messages': messages,
+        'stream': true,
+      };
+
+      if (tools != null && tools.isNotEmpty) {
+        requestData['tools'] = tools;
+      }
+
       final response = await _dio.post<ResponseBody>(
         'https://openrouter.ai/api/v1/chat/completions',
-        data: {'model': model, 'messages': messages, 'stream': true},
+        data: requestData,
         options: Options(
           headers: {
             'Authorization': 'Bearer $apiKey',
@@ -172,9 +234,14 @@ class OpenRouterService {
       if (response.statusCode == 200 && response.data != null) {
         final stream = response.data!.stream;
         String buffer = '';
+        int chunkCount = 0;
 
         await for (final chunk in stream) {
+          chunkCount++;
           final text = utf8.decode(chunk);
+          print(
+            'OpenRouter: Received chunk #$chunkCount: ${text.substring(0, text.length > 100 ? 100 : text.length)}...',
+          );
           buffer += text;
 
           // Process complete lines
@@ -186,28 +253,113 @@ class OpenRouterService {
             if (line.isEmpty || !line.startsWith('data: ')) continue;
 
             final data = line.substring(6); // Remove 'data: ' prefix
-            if (data == '[DONE]') continue;
+            if (data == '[DONE]') {
+              print('OpenRouter: Stream completed with [DONE]');
+              continue;
+            }
 
             try {
               final json = jsonDecode(data) as Map<String, dynamic>;
+
+              // Check for errors in the chunk
+              final error = json['error'];
+              if (error != null) {
+                print('OpenRouter: ERROR in stream chunk:');
+                print('  Full error object: ${jsonEncode(error)}');
+                throw Exception('Provider error: ${jsonEncode(error)}');
+              }
+
               final choices = json['choices'] as List<dynamic>?;
               if (choices != null && choices.isNotEmpty) {
                 final delta = choices[0]['delta'] as Map<String, dynamic>?;
+
+                // Check for reasoning_details array (OpenRouter's structured format)
+                final reasoningDetails =
+                    delta?['reasoning_details'] as List<dynamic>?;
+                if (reasoningDetails != null && reasoningDetails.isNotEmpty) {
+                  for (final detail in reasoningDetails) {
+                    final detailMap = detail as Map<String, dynamic>;
+                    final type = detailMap['type'] as String?;
+
+                    // Extract text from different reasoning types
+                    String? reasoningText;
+                    if (type == 'reasoning.text') {
+                      reasoningText = detailMap['text'] as String?;
+                    } else if (type == 'reasoning.summary') {
+                      reasoningText = detailMap['summary'] as String?;
+                    }
+
+                    if (reasoningText != null && reasoningText.isNotEmpty) {
+                      print(
+                        'OpenRouter: Yielding reasoning ($type): "$reasoningText"',
+                      );
+                      yield 'REASONING:$reasoningText';
+                    }
+                  }
+                }
+
+                // Also check for regular content
                 final content = delta?['content'] as String?;
                 if (content != null && content.isNotEmpty) {
+                  print('OpenRouter: Yielding content: "$content"');
                   yield content;
+                }
+
+                // Log the full delta for debugging
+                if (delta != null && delta.isNotEmpty) {
+                  print('OpenRouter: Full delta keys: ${delta.keys.toList()}');
                 }
               }
             } catch (e) {
+              print('OpenRouter: Failed to parse JSON line: $line');
               // Skip invalid JSON lines
               continue;
             }
           }
         }
+        print('OpenRouter: Stream ended after $chunkCount chunks');
       } else {
+        print(
+          'OpenRouter: chatCompletionStream failed with status ${response.statusCode}',
+        );
         throw Exception('Chat completion failed: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      print('OpenRouter: chatCompletionStream DioException:');
+      print('  Status: ${e.response?.statusCode}');
+      print('  Response type: ${e.response?.data.runtimeType}');
+
+      // Try to read the response body if it's a stream
+      if (e.response?.data is ResponseBody) {
+        try {
+          final responseBody = e.response!.data as ResponseBody;
+          final chunks = await responseBody.stream.toList();
+          final bytes = chunks.expand((chunk) => chunk).toList();
+          final errorText = utf8.decode(bytes);
+          print('  Response body: $errorText');
+        } catch (readError) {
+          print('  Failed to read response body: $readError');
+        }
+      } else {
+        print('  Response data: ${e.response?.data}');
+      }
+
+      print('  Message: ${e.message}');
+      print('  Request data: ${e.requestOptions.data}');
+
+      if (e.response?.statusCode == 401) {
+        // Token expired or invalid - clear it and prompt re-auth
+        print('OpenRouter: 401 Unauthorized - clearing token');
+        await logout();
+        throw OpenRouterAuthException(
+          'Authentication expired. Please log in again.',
+        );
+      }
+      throw Exception(
+        'Error making streaming chat completion request: ${e.message}',
+      );
     } catch (e) {
+      print('OpenRouter: chatCompletionStream unexpected error: $e');
       throw Exception('Error making streaming chat completion request: $e');
     }
   }
@@ -229,9 +381,27 @@ class OpenRouterService {
         final data = response.data['data'] as List<dynamic>;
         return data.cast<Map<String, dynamic>>();
       } else {
+        print(
+          'OpenRouter: getModels failed with status ${response.statusCode}: ${response.data}',
+        );
         throw Exception('Failed to fetch models: ${response.statusCode}');
       }
+    } on DioException catch (e) {
+      print('OpenRouter: getModels DioException:');
+      print('  Status: ${e.response?.statusCode}');
+      print('  Response: ${e.response?.data}');
+      print('  Message: ${e.message}');
+      if (e.response?.statusCode == 401) {
+        // Token expired or invalid - clear it and prompt re-auth
+        print('OpenRouter: 401 Unauthorized - clearing token');
+        await logout();
+        throw OpenRouterAuthException(
+          'Authentication expired. Please log in again.',
+        );
+      }
+      throw Exception('Error fetching models: ${e.message}');
     } catch (e) {
+      print('OpenRouter: getModels unexpected error: $e');
       throw Exception('Error fetching models: $e');
     }
   }

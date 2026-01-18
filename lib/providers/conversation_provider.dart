@@ -122,6 +122,24 @@ class ConversationProvider extends ChangeNotifier {
     }
   }
 
+  /// Alias for updateMessageContent for clearer API
+  Future<void> updateMessage(String messageId, String newContent) async {
+    await updateMessageContent(messageId, newContent);
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    // Find and remove the message
+    for (final messages in _messages.values) {
+      final index = messages.indexWhere((m) => m.id == messageId);
+      if (index != -1) {
+        messages.removeAt(index);
+        await _db.deleteMessage(messageId);
+        notifyListeners();
+        break;
+      }
+    }
+  }
+
   Future<void> clearMessages(String conversationId) async {
     _messages[conversationId]?.clear();
 

@@ -4,6 +4,7 @@ import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
 import 'model_picker_screen.dart';
+import 'mcp_servers_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -55,6 +56,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : null;
             _isLoading = false;
           });
+        }
+      } on OpenRouterAuthException {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Authentication expired. Please log in again.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.of(context).pop();
         }
       } catch (e) {
         if (mounted) {
@@ -165,6 +176,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _autoTitleEnabled = value;
                 });
               },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // MCP Servers Section
+          _buildSectionHeader('MCP Servers'),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const Icon(Icons.dns),
+              title: const Text('Manage MCP Servers'),
+              subtitle: const Text('Configure remote MCP servers'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const McpServersScreen(),
+                ),
+              ),
             ),
           ),
 

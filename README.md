@@ -58,6 +58,11 @@ lib/
 └── main.dart        # App entry point
 ```
 
+## Finding MCP Servers
+
+Looking for MCP servers to connect to? Check out:
+- [Remote MCP Servers Directory](https://mcpservers.org/remote-mcp-servers) - A curated list of available remote MCP servers
+
 ## Roadmap
 
 - [ ] OpenRouter OAuth integration

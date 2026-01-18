@@ -4,14 +4,19 @@ import '../models/message.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
+  final bool isStreaming;
 
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({
+    super.key, 
+    required this.message,
+    this.isStreaming = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
     final timeFormat = DateFormat('h:mm a');
-    final isLoading = !isUser && message.content.isEmpty;
+    final isLoading = !isUser && message.content.isEmpty && !isStreaming;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -75,15 +80,31 @@ class MessageBubble extends StatelessWidget {
                             ),
                           ],
                         )
-                      : Text(
-                          message.content,
-                          style: TextStyle(
-                            color: isUser
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                          ),
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message.content,
+                              style: TextStyle(
+                                color: isUser
+                                    ? Theme.of(context).colorScheme.onPrimary
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (isStreaming) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                width: 8,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                 ),
                 const SizedBox(height: 4),
