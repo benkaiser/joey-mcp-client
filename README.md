@@ -1,16 +1,71 @@
-# joey_mcp_client_flutter
+# Joey MCP Client
 
-A new Flutter project.
+A mobile chat application built with Flutter that enables users to interact with remote MCP (Model Context Protocol) servers over Streamable HTTP.
+
+## Features
+
+- 💬 **Local Chat Interface** - Multiple conversations with persistent storage
+- 🔌 **MCP Server Support** - Connect to remote MCP servers via Streamable HTTP
+- 🤖 **OpenRouter Integration** - LLM responses powered by OpenRouter (OAuth-based)
+- 💾 **Data Persistence** - Conversations and messages stored locally with SQLite
+- 🎨 **Material Design 3** - Modern, vibrant UI with smooth animations
+- 📱 **Cross-Platform** - Runs on iOS, Android, macOS, and web
+
+## Tech Stack
+
+- **Framework**: Flutter
+- **State Management**: Provider
+- **Database**: SQLite (sqflite)
+- **HTTP Client**: Dio
+- **LLM Provider**: OpenRouter (planned)
+- **MCP Transport**: Streamable HTTP (planned)
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter SDK 3.10.7 or later
+- Dart SDK
+- iOS/Android development environment (for mobile)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Installation
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+1. Clone the repository:
+```bash
+git clone https://github.com/benkaiser/joey-mcp-client.git
+cd joey-mcp-client
+```
+
+2. Install dependencies:
+```bash
+flutter pub get
+```
+
+3. Run the app:
+```bash
+flutter run
+```
+
+## Project Structure
+
+```
+lib/
+├── models/          # Data models (Conversation, Message)
+├── providers/       # State management (ConversationProvider)
+├── screens/         # UI screens (Chat, ConversationList)
+├── services/        # Backend services (DatabaseService)
+├── widgets/         # Reusable UI components (MessageBubble)
+└── main.dart        # App entry point
+```
+
+## Roadmap
+
+- [ ] OpenRouter OAuth integration
+- [ ] MCP server configuration UI
+- [ ] Support for multiple MCP servers simultaneously
+- [ ] Tool execution from MCP servers
+- [ ] Server management and authentication
+
+## License
+
+MIT License - see LICENSE file for details
