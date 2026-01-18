@@ -21,8 +21,9 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -31,6 +32,7 @@ class DatabaseService {
       CREATE TABLE conversations (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        model TEXT NOT NULL,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -52,6 +54,15 @@ class DatabaseService {
     ''');
   }
 
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add model column to existing conversations table
+      await db.execute('''
+        ALTER TABLE conversations ADD COLUMN model TEXT NOT NULL DEFAULT 'openai/gpt-3.5-turbo'
+      ''');
+    }
+  }
+
   // Conversation operations
   Future<void> insertConversation(Conversation conversation) async {
     final db = await database;
@@ -64,10 +75,7 @@ class DatabaseService {
 
   Future<List<Conversation>> getAllConversations() async {
     final db = await database;
-    final result = await db.query(
-      'conversations',
-      orderBy: 'updatedAt DESC',
-    );
+    final result = await db.query('conversations', orderBy: 'updatedAt DESC');
     return result.map((map) => Conversation.fromMap(map)).toList();
   }
 
@@ -83,11 +91,7 @@ class DatabaseService {
 
   Future<void> deleteConversation(String id) async {
     final db = await database;
-    await db.delete(
-      'conversations',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('conversations', where: 'id = ?', whereArgs: [id]);
     // Messages will be deleted automatically due to CASCADE
   }
 
@@ -101,7 +105,19 @@ class DatabaseService {
     );
   }
 
-  Future<List<Message>> getMessagesForConversation(String conversationId) async {
+  Future<void> updateMessage(Message message) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      message.toMap(),
+      where: 'id = ?',
+      whereArgs: [message.id],
+    );
+  }
+
+  Future<List<Message>> getMessagesForConversation(
+    String conversationId,
+  ) async {
     final db = await database;
     final result = await db.query(
       'messages',

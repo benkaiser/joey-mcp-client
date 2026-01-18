@@ -45,5 +45,22 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.joey.mcp.client</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>joey</string>
+			</array>
+		</dict>
+	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:openrouterauth.benkaiser.dev</string>
+	</array>
 </dict>
 </plist>

@@ -33,11 +33,15 @@ class ConversationProvider extends ChangeNotifier {
     return List.unmodifiable(_messages[conversationId] ?? []);
   }
 
-  Future<Conversation> createConversation({String? title}) async {
+  Future<Conversation> createConversation({
+    String? title,
+    required String model,
+  }) async {
     final now = DateTime.now();
     final conversation = Conversation(
       id: const Uuid().v4(),
       title: title ?? 'New Chat ${_conversations.length + 1}',
+      model: model,
       createdAt: now,
       updatedAt: now,
     );
@@ -79,7 +83,9 @@ class ConversationProvider extends ChangeNotifier {
     _messages[message.conversationId]!.add(message);
 
     // Update conversation's updatedAt timestamp
-    final index = _conversations.indexWhere((c) => c.id == message.conversationId);
+    final index = _conversations.indexWhere(
+      (c) => c.id == message.conversationId,
+    );
     if (index != -1) {
       _conversations[index] = _conversations[index].copyWith(
         updatedAt: DateTime.now(),
@@ -96,6 +102,26 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateMessageContent(String messageId, String newContent) async {
+    // Find the message and update its content
+    for (final messages in _messages.values) {
+      final index = messages.indexWhere((m) => m.id == messageId);
+      if (index != -1) {
+        final updatedMessage = Message(
+          id: messages[index].id,
+          conversationId: messages[index].conversationId,
+          role: messages[index].role,
+          content: newContent,
+          timestamp: messages[index].timestamp,
+        );
+        messages[index] = updatedMessage;
+        await _db.updateMessage(updatedMessage);
+        notifyListeners();
+        break;
+      }
+    }
+  }
+
   Future<void> clearMessages(String conversationId) async {
     _messages[conversationId]?.clear();
 
@@ -105,15 +131,15 @@ class ConversationProvider extends ChangeNotifier {
 
   Future<void> deleteAllConversations() async {
     final conversationIds = _conversations.map((c) => c.id).toList();
-    
+
     _conversations.clear();
     _messages.clear();
-    
+
     // Delete all conversations from database
     for (final id in conversationIds) {
       await _db.deleteConversation(id);
     }
-    
+
     notifyListeners();
   }
 }

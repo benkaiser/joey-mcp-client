@@ -45,8 +45,11 @@ dependencies:
   # HTTP client
   dio: ^5.4.0
 
-  # OpenRouter OAuth (for future implementation)
+  # OpenRouter OAuth
   url_launcher: ^6.2.2
+  app_links: ^6.3.4
+  crypto: ^3.0.3
+  shared_preferences: ^2.2.2
 
   # Utilities
   intl: ^0.19.0
