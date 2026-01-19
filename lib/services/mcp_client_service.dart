@@ -262,11 +262,13 @@ class McpClientService {
       if (contentType?.contains('text/event-stream') ?? false) {
         print('MCP: Processing SSE stream');
         // Parse SSE stream - may contain sampling requests before final response
-        return await _parseSSEStreamReal(response.data, requestId);
+        return await _parseSSEStreamReal(response.data.stream, requestId);
       } else {
         print('MCP: Processing single JSON response');
         // Read the stream as a single response
-        final responseBody = await response.data.bytesToString();
+        final chunks = await response.data.stream.toList();
+        final bytes = chunks.expand((x) => x).toList();
+        final responseBody = utf8.decode(bytes);
         final data = _parseSSEResponse(responseBody);
 
         if (data['error'] != null) {
