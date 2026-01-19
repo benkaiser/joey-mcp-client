@@ -251,7 +251,7 @@ class McpClientService {
         },
         options: Options(
           headers: _buildRequestHeaders(),
-          responseType: ResponseType.plain,
+          responseType: ResponseType.stream, // Stream for SSE support
         ),
       );
 
@@ -262,11 +262,12 @@ class McpClientService {
       if (contentType?.contains('text/event-stream') ?? false) {
         print('MCP: Processing SSE stream');
         // Parse SSE stream - may contain sampling requests before final response
-        return await _parseSSEStream(response.data, requestId);
+        return await _parseSSEStreamReal(response.data, requestId);
       } else {
         print('MCP: Processing single JSON response');
-        // Single JSON response
-        final data = _parseSSEResponse(response.data);
+        // Read the stream as a single response
+        final responseBody = await response.data.bytesToString();
+        final data = _parseSSEResponse(responseBody);
 
         if (data['error'] != null) {
           throw Exception('MCP tools/call error: ${data['error']}');
@@ -283,72 +284,91 @@ class McpClientService {
     }
   }
 
-  /// Parse an SSE stream and handle incoming requests/notifications
-  Future<McpToolResult> _parseSSEStream(
-    dynamic responseData,
+  /// Parse a real SSE stream (ResponseType.stream)
+  Future<McpToolResult> _parseSSEStreamReal(
+    Stream<List<int>> stream,
     int requestId,
   ) async {
-    final String text = responseData.toString();
-    print('MCP: SSE stream data:\n$text');
-    final lines = text.split('\n');
-    print('MCP: Parsed ${lines.length} lines from SSE stream');
-
+    print('MCP: Starting to process SSE stream');
     Map<String, dynamic>? finalResponse;
+    final buffer = StringBuffer();
 
-    for (final line in lines) {
-      if (!line.startsWith('data: ')) continue;
+    await for (final chunk in stream) {
+      final text = utf8.decode(chunk);
+      buffer.write(text);
+      print('MCP: Received chunk: $text');
 
-      final jsonStr = line.substring(6).trim();
-      if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
+      // Process complete lines
+      final lines = buffer.toString().split('\n');
+      // Keep the last partial line in the buffer
+      buffer.clear();
+      if (lines.isNotEmpty && !lines.last.contains('\n')) {
+        buffer.write(lines.last);
+        lines.removeLast();
+      }
 
-      try {
-        print('MCP: Parsing JSON: $jsonStr');
-        final message = jsonDecode(jsonStr) as Map<String, dynamic>;
+      for (final line in lines) {
+        if (!line.startsWith('data: ')) continue;
 
-        // Check if this is a request from the server (e.g., sampling)
-        if (message['method'] != null && message['id'] != null) {
-          // This is a request from the server
-          print(
-            'MCP: Received server request: ${message['method']} with ID: ${message['id']}',
-          );
+        final jsonStr = line.substring(6).trim();
+        if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
 
-          if (message['method'] == 'sampling/createMessage') {
-            // Handle sampling request
-            print('MCP: Handling sampling request...');
-            try {
-              final samplingResponse = await handleSamplingRequest(message);
-              print('MCP: Sampling response received: $samplingResponse');
+        try {
+          print('MCP: Parsing JSON: $jsonStr');
+          final message = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-              // Send response back to server
-              await _sendResponse(message['id'], samplingResponse);
-              print('MCP: Sampling response sent to server');
-            } catch (e) {
-              print('MCP: Sampling request failed: $e');
-              // Send error response
-              await _sendErrorResponse(
-                message['id'],
-                -1,
-                'Sampling request failed: $e',
+          // Check if this is a request from the server (e.g., sampling)
+          if (message['method'] != null && message['id'] != null) {
+            print(
+              'MCP: Received server request: ${message['method']} with ID: ${message['id']}',
+            );
+
+            if (message['method'] == 'sampling/createMessage') {
+              // Handle sampling request
+              print('MCP: Handling sampling request...');
+              try {
+                final samplingResponse = await handleSamplingRequest(message);
+                print('MCP: Sampling response received: $samplingResponse');
+
+                // Send response back to server
+                await _sendResponse(message['id'], samplingResponse);
+                print('MCP: Sampling response sent to server');
+              } catch (e) {
+                print('MCP: Sampling request failed: $e');
+                // Send error response
+                await _sendErrorResponse(
+                  message['id'],
+                  -1,
+                  'Sampling request failed: $e',
+                );
+              }
+            } else {
+              print(
+                'MCP: Unhandled server request method: ${message['method']}',
               );
             }
-          } else {
-            print('MCP: Unhandled server request method: ${message['method']}');
           }
+          // Check if this is the response to our original request
+          else if (message['id'] == requestId && message['result'] != null) {
+            print('MCP: Received final response for request ID $requestId');
+            finalResponse = message;
+            break; // Exit the stream processing
+          }
+          // Handle errors
+          else if (message['id'] == requestId && message['error'] != null) {
+            print(
+              'MCP: Received error for request ID $requestId: ${message['error']}',
+            );
+            throw Exception('MCP tools/call error: ${message['error']}');
+          }
+        } catch (e) {
+          print('MCP: Failed to parse SSE line "$line": $e');
         }
-        // Check if this is the response to our original request
-        else if (message['id'] == requestId && message['result'] != null) {
-          print('MCP: Received final response for request ID $requestId');
-          finalResponse = message;
-        }
-        // Handle errors
-        else if (message['id'] == requestId && message['error'] != null) {
-          print(
-            'MCP: Received error for request ID $requestId: ${message['error']}',
-          );
-          throw Exception('MCP tools/call error: ${message['error']}');
-        }
-      } catch (e) {
-        print('MCP: Failed to parse SSE line "$line": $e');
+      }
+
+      // If we got the final response, break out of the stream
+      if (finalResponse != null) {
+        break;
       }
     }
 
