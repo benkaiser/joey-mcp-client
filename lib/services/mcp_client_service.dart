@@ -238,29 +238,141 @@ class McpClientService {
     Map<String, dynamic> arguments,
   ) async {
     try {
+      final requestId = DateTime.now().millisecondsSinceEpoch;
+
       final response = await _dio.post(
         serverUrl,
         data: {
           'jsonrpc': '2.0',
-          'id': DateTime.now().millisecondsSinceEpoch,
+          'id': requestId,
           'method': 'tools/call',
           'params': {'name': toolName, 'arguments': arguments},
         },
         options: Options(headers: _buildRequestHeaders()),
       );
 
-      final data = _parseSSEResponse(response.data);
+      final contentType = response.headers.value('content-type');
 
-      if (data['error'] != null) {
-        throw Exception('MCP tools/call error: ${data['error']}');
+      // Check if response is SSE stream
+      if (contentType?.contains('text/event-stream') ?? false) {
+        // Parse SSE stream - may contain sampling requests before final response
+        return await _parseSSEStream(response.data, requestId);
+      } else {
+        // Single JSON response
+        final data = _parseSSEResponse(response.data);
+
+        if (data['error'] != null) {
+          throw Exception('MCP tools/call error: ${data['error']}');
+        }
+
+        return McpToolResult.fromJson(data['result']);
       }
-
-      return McpToolResult.fromJson(data['result']);
     } catch (e) {
       if (e is DioException && e.response != null) {
         print('MCP callTool error response body: ${e.response?.data}');
       }
       throw Exception('Failed to call tool $toolName: $e');
+    }
+  }
+
+  /// Parse an SSE stream and handle incoming requests/notifications
+  Future<McpToolResult> _parseSSEStream(
+    dynamic responseData,
+    int requestId,
+  ) async {
+    final String text = responseData.toString();
+    final lines = text.split('\n');
+
+    Map<String, dynamic>? finalResponse;
+
+    for (final line in lines) {
+      if (!line.startsWith('data: ')) continue;
+
+      final jsonStr = line.substring(6).trim();
+      if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
+
+      try {
+        final message = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+        // Check if this is a request from the server (e.g., sampling)
+        if (message['method'] != null && message['id'] != null) {
+          // This is a request from the server
+          print('MCP: Received server request: ${message['method']}');
+
+          if (message['method'] == 'sampling/createMessage') {
+            // Handle sampling request
+            try {
+              final samplingResponse = await handleSamplingRequest(message);
+
+              // Send response back to server
+              await _sendResponse(message['id'], samplingResponse);
+            } catch (e) {
+              print('MCP: Sampling request failed: $e');
+              // Send error response
+              await _sendErrorResponse(
+                message['id'],
+                -1,
+                'Sampling request failed: $e',
+              );
+            }
+          } else {
+            print('MCP: Unhandled server request method: ${message['method']}');
+          }
+        }
+        // Check if this is the response to our original request
+        else if (message['id'] == requestId && message['result'] != null) {
+          finalResponse = message;
+        }
+        // Handle errors
+        else if (message['id'] == requestId && message['error'] != null) {
+          throw Exception('MCP tools/call error: ${message['error']}');
+        }
+      } catch (e) {
+        print('MCP: Failed to parse SSE line: $e');
+      }
+    }
+
+    if (finalResponse == null) {
+      throw Exception('No response received in SSE stream');
+    }
+
+    return McpToolResult.fromJson(finalResponse['result']);
+  }
+
+  /// Send a response back to the server
+  Future<void> _sendResponse(
+    dynamic messageId,
+    Map<String, dynamic> result,
+  ) async {
+    try {
+      await _dio.post(
+        serverUrl,
+        data: {'jsonrpc': '2.0', 'id': messageId, 'result': result},
+        options: Options(headers: _buildRequestHeaders()),
+      );
+    } catch (e) {
+      print('MCP: Failed to send response: $e');
+    }
+  }
+
+  /// Send an error response back to the server
+  Future<void> _sendErrorResponse(
+    dynamic messageId,
+    int code,
+    String message,
+  ) async {
+    try {
+      await _dio.post(
+        serverUrl,
+        data: {
+          'jsonrpc': '2.0',
+          'id': messageId,
+          'error': {'code': code, 'message': message},
+        },
+        options: Options(headers: _buildRequestHeaders()),
+      );
+    } catch (e) {
+      print('MCP: Failed to send error response: $e');
     }
   }
 
