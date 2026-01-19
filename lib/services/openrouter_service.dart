@@ -135,6 +135,7 @@ class OpenRouterService {
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
     bool stream = false,
+    int? maxTokens,
   }) async {
     final apiKey = await getApiKey();
     if (apiKey == null) {
@@ -150,6 +151,10 @@ class OpenRouterService {
 
       if (tools != null && tools.isNotEmpty) {
         requestData['tools'] = tools;
+      }
+
+      if (maxTokens != null) {
+        requestData['max_tokens'] = maxTokens;
       }
 
       final response = await _dio.post(

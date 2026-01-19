@@ -72,10 +72,16 @@ class McpClientService {
   String? _protocolVersion;
   String? _sessionId;
 
+  /// Callback for handling sampling requests from the server
+  Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
+  onSamplingRequest;
+
   McpClientService({required this.serverUrl, this.headers})
     : _dio = Dio(
         BaseOptions(
-          headers: headers?.map((key, value) => MapEntry(key, value as dynamic)),
+          headers: headers?.map(
+            (key, value) => MapEntry(key, value as dynamic),
+          ),
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 30),
         ),
@@ -92,7 +98,7 @@ class McpClientService {
           'method': 'initialize',
           'params': {
             'protocolVersion': '2024-11-05',
-            'capabilities': {'tools': {}},
+            'capabilities': {'tools': {}, 'sampling': {}},
             'clientInfo': {
               'name': 'joey-mcp-client-flutter',
               'version': '1.0.0',
@@ -122,7 +128,9 @@ class McpClientService {
       // Extract session ID from response headers if present
       _sessionId = response.headers.value('mcp-session-id');
 
-      print('MCP initialize parsed successfully: ${data['result']?['serverInfo']?['name']}');
+      print(
+        'MCP initialize parsed successfully: ${data['result']?['serverInfo']?['name']}',
+      );
       print('MCP protocol version: $_protocolVersion');
       print('MCP session ID: $_sessionId');
 
@@ -135,13 +143,22 @@ class McpClientService {
           options: Options(headers: _buildRequestHeaders()),
         );
         print('MCP initialized notification sent successfully');
-        print('MCP initialized notification response: ${notificationResponse.data}');
+        print(
+          'MCP initialized notification response: ${notificationResponse.data}',
+        );
       } catch (notificationError) {
-        if (notificationError is DioException && notificationError.response != null) {
-          print('MCP initialized notification error response: ${notificationError.response?.data}');
-          print('MCP initialized notification error status: ${notificationError.response?.statusCode}');
+        if (notificationError is DioException &&
+            notificationError.response != null) {
+          print(
+            'MCP initialized notification error response: ${notificationError.response?.data}',
+          );
+          print(
+            'MCP initialized notification error status: ${notificationError.response?.statusCode}',
+          );
         }
-        throw Exception('Failed to send initialized notification: $notificationError');
+        throw Exception(
+          'Failed to send initialized notification: $notificationError',
+        );
       }
     } catch (e) {
       if (e is DioException && e.response != null) {
@@ -245,6 +262,17 @@ class McpClientService {
       }
       throw Exception('Failed to call tool $toolName: $e');
     }
+  }
+
+  /// Handle incoming sampling request from server
+  Future<Map<String, dynamic>> handleSamplingRequest(
+    Map<String, dynamic> request,
+  ) async {
+    if (onSamplingRequest == null) {
+      throw Exception('No sampling request handler registered');
+    }
+
+    return await onSamplingRequest!(request);
   }
 
   /// Close the connection (for cleanup)

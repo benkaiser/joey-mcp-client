@@ -12,6 +12,7 @@ import '../services/database_service.dart';
 import '../services/mcp_client_service.dart';
 import '../services/chat_service.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/sampling_request_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -288,6 +289,8 @@ class _ChatScreenState extends State<ChatScreen> {
           backgroundColor: Colors.orange,
         ),
       );
+    } else if (event is SamplingRequestReceived) {
+      _showSamplingRequestDialog(event);
     } else if (event is ErrorOccurred) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -296,6 +299,42 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
+  }
+
+  /// Show the sampling request dialog for user approval
+  void _showSamplingRequestDialog(SamplingRequestReceived event) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => SamplingRequestDialog(
+        request: event.request,
+        onApprove: (approvedRequest) async {
+          try {
+            // Process the approved sampling request
+            final response = await _chatService!.processSamplingRequest(
+              request: approvedRequest,
+              preferredModel: widget.conversation.model,
+            );
+
+            // Return the response to the MCP server
+            event.onApprove(approvedRequest, response);
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Sampling error: ${e.toString()}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            event.onReject();
+          }
+        },
+        onReject: () async {
+          event.onReject();
+        },
+      ),
+    );
   }
 
   @override
@@ -547,7 +586,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
                           // Move original content to reasoning field (thinking bubble)
                           // and show tool calls as the main content
-                          String displayReasoning = (message.reasoning ?? '').trim();
+                          String displayReasoning = (message.reasoning ?? '')
+                              .trim();
                           final trimmedContent = message.content.trim();
 
                           if (trimmedContent.isNotEmpty) {
@@ -563,7 +603,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             role: message.role,
                             content: toolCallContent,
                             timestamp: message.timestamp,
-                            reasoning: displayReasoning.isNotEmpty ? displayReasoning : null,
+                            reasoning: displayReasoning.isNotEmpty
+                                ? displayReasoning
+                                : null,
                             toolCallData: message.toolCallData,
                             toolCallId: message.toolCallId,
                             toolName: message.toolName,
@@ -603,8 +645,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       Text(
                         _currentToolName != null
                             ? (_isToolExecuting
-                                ? 'Calling tool $_currentToolName...'
-                                : 'Called tool $_currentToolName')
+                                  ? 'Calling tool $_currentToolName...'
+                                  : 'Called tool $_currentToolName')
                             : 'Thinking...',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],

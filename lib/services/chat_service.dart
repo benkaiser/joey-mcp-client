@@ -18,7 +18,12 @@ class ChatService {
     required Map<String, List<McpTool>> mcpTools,
   }) : _openRouterService = openRouterService,
        _mcpClients = mcpClients,
-       _mcpTools = mcpTools;
+       _mcpTools = mcpTools {
+    // Register sampling handler for all MCP clients
+    for (final client in _mcpClients.values) {
+      client.onSamplingRequest = _handleSamplingRequest;
+    }
+  }
 
   /// Stream controller for chat events
   final _eventController = StreamController<ChatEvent>.broadcast();
@@ -28,6 +33,118 @@ class ChatService {
 
   void dispose() {
     _eventController.close();
+  }
+
+  /// Handle sampling request from an MCP server
+  Future<Map<String, dynamic>> _handleSamplingRequest(
+    Map<String, dynamic> request,
+  ) async {
+    // Emit event to notify UI about the sampling request
+    final completer = Completer<Map<String, dynamic>>();
+
+    _eventController.add(
+      SamplingRequestReceived(
+        request: request,
+        onApprove: (approvedRequest, response) {
+          completer.complete(response);
+        },
+        onReject: () {
+          completer.completeError(
+            Exception('Sampling request rejected by user'),
+          );
+        },
+      ),
+    );
+
+    return completer.future;
+  }
+
+  /// Process a sampling request and return the LLM response
+  Future<Map<String, dynamic>> processSamplingRequest({
+    required Map<String, dynamic> request,
+    String? preferredModel,
+  }) async {
+    final params = request['params'] as Map<String, dynamic>;
+    final messages = params['messages'] as List;
+    final systemPrompt = params['systemPrompt'] as String?;
+    final maxTokens = params['maxTokens'] as int?;
+    final modelPreferences =
+        params['modelPreferences'] as Map<String, dynamic>?;
+
+    // Convert MCP messages to OpenRouter format
+    final apiMessages = <Map<String, dynamic>>[];
+
+    if (systemPrompt != null && systemPrompt.isNotEmpty) {
+      apiMessages.add({'role': 'system', 'content': systemPrompt});
+    }
+
+    for (final message in messages) {
+      final role = message['role'] as String;
+      final content = message['content'];
+
+      String contentText;
+      if (content is Map && content['type'] == 'text') {
+        contentText = content['text'] as String;
+      } else if (content is String) {
+        contentText = content;
+      } else {
+        // For now, skip non-text content types (image, audio)
+        continue;
+      }
+
+      apiMessages.add({'role': role, 'content': contentText});
+    }
+
+    // Select model based on preferences or use default
+    String model = preferredModel ?? 'anthropic/claude-3-5-sonnet';
+
+    if (modelPreferences != null) {
+      final hints = modelPreferences['hints'] as List?;
+      if (hints != null && hints.isNotEmpty) {
+        // Try to match a hint to an available model
+        // For now, just use the first hint as a substring match
+        final firstHint = hints.first['name'] as String?;
+        if (firstHint != null) {
+          // You could implement more sophisticated model selection here
+          // For now, we'll use the hint if it looks like a full model ID
+          if (firstHint.contains('/')) {
+            model = firstHint;
+          }
+        }
+      }
+    }
+
+    // Call OpenRouter
+    final response = await _openRouterService.chatCompletion(
+      model: model,
+      messages: apiMessages,
+      maxTokens: maxTokens,
+    );
+
+    // Convert OpenRouter response to MCP sampling response format
+    final choice = response['choices'][0];
+    final assistantMessage = choice['message'];
+    final finishReason = choice['finish_reason'];
+
+    return {
+      'role': 'assistant',
+      'content': {'type': 'text', 'text': assistantMessage['content']},
+      'model': model,
+      'stopReason': _convertFinishReason(finishReason),
+    };
+  }
+
+  String _convertFinishReason(String? openRouterReason) {
+    switch (openRouterReason) {
+      case 'stop':
+        return 'endTurn';
+      case 'length':
+        return 'maxTokens';
+      case 'tool_calls':
+        return 'stopSequence';
+      default:
+        return 'endTurn';
+    }
   }
 
   /// Run the agentic loop for a conversation
@@ -312,4 +429,21 @@ class MaxIterationsReached extends ChatEvent {}
 class ErrorOccurred extends ChatEvent {
   final String error;
   ErrorOccurred({required this.error});
+}
+
+/// Event emitted when a sampling request is received from an MCP server
+class SamplingRequestReceived extends ChatEvent {
+  final Map<String, dynamic> request;
+  final Function(
+    Map<String, dynamic> approvedRequest,
+    Map<String, dynamic> response,
+  )
+  onApprove;
+  final Function() onReject;
+
+  SamplingRequestReceived({
+    required this.request,
+    required this.onApprove,
+    required this.onReject,
+  });
 }
