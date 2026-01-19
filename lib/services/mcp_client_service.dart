@@ -239,6 +239,7 @@ class McpClientService {
   ) async {
     try {
       final requestId = DateTime.now().millisecondsSinceEpoch;
+      print('MCP: Calling tool $toolName with request ID $requestId');
 
       final response = await _dio.post(
         serverUrl,
@@ -248,16 +249,22 @@ class McpClientService {
           'method': 'tools/call',
           'params': {'name': toolName, 'arguments': arguments},
         },
-        options: Options(headers: _buildRequestHeaders()),
+        options: Options(
+          headers: _buildRequestHeaders(),
+          responseType: ResponseType.plain,
+        ),
       );
 
       final contentType = response.headers.value('content-type');
+      print('MCP: Response content-type: $contentType');
 
       // Check if response is SSE stream
       if (contentType?.contains('text/event-stream') ?? false) {
+        print('MCP: Processing SSE stream');
         // Parse SSE stream - may contain sampling requests before final response
         return await _parseSSEStream(response.data, requestId);
       } else {
+        print('MCP: Processing single JSON response');
         // Single JSON response
         final data = _parseSSEResponse(response.data);
 
@@ -271,6 +278,7 @@ class McpClientService {
       if (e is DioException && e.response != null) {
         print('MCP callTool error response body: ${e.response?.data}');
       }
+      print('MCP callTool exception: $e');
       throw Exception('Failed to call tool $toolName: $e');
     }
   }
@@ -281,7 +289,9 @@ class McpClientService {
     int requestId,
   ) async {
     final String text = responseData.toString();
+    print('MCP: SSE stream data:\n$text');
     final lines = text.split('\n');
+    print('MCP: Parsed ${lines.length} lines from SSE stream');
 
     Map<String, dynamic>? finalResponse;
 
@@ -292,20 +302,26 @@ class McpClientService {
       if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
 
       try {
+        print('MCP: Parsing JSON: $jsonStr');
         final message = jsonDecode(jsonStr) as Map<String, dynamic>;
 
         // Check if this is a request from the server (e.g., sampling)
         if (message['method'] != null && message['id'] != null) {
           // This is a request from the server
-          print('MCP: Received server request: ${message['method']}');
+          print(
+            'MCP: Received server request: ${message['method']} with ID: ${message['id']}',
+          );
 
           if (message['method'] == 'sampling/createMessage') {
             // Handle sampling request
+            print('MCP: Handling sampling request...');
             try {
               final samplingResponse = await handleSamplingRequest(message);
+              print('MCP: Sampling response received: $samplingResponse');
 
               // Send response back to server
               await _sendResponse(message['id'], samplingResponse);
+              print('MCP: Sampling response sent to server');
             } catch (e) {
               print('MCP: Sampling request failed: $e');
               // Send error response
@@ -321,21 +337,27 @@ class McpClientService {
         }
         // Check if this is the response to our original request
         else if (message['id'] == requestId && message['result'] != null) {
+          print('MCP: Received final response for request ID $requestId');
           finalResponse = message;
         }
         // Handle errors
         else if (message['id'] == requestId && message['error'] != null) {
+          print(
+            'MCP: Received error for request ID $requestId: ${message['error']}',
+          );
           throw Exception('MCP tools/call error: ${message['error']}');
         }
       } catch (e) {
-        print('MCP: Failed to parse SSE line: $e');
+        print('MCP: Failed to parse SSE line "$line": $e');
       }
     }
 
     if (finalResponse == null) {
+      print('MCP: ERROR - No final response received in SSE stream!');
       throw Exception('No response received in SSE stream');
     }
 
+    print('MCP: Returning final tool result');
     return McpToolResult.fromJson(finalResponse['result']);
   }
 
