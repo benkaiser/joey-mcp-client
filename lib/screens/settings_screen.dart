@@ -18,6 +18,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? _defaultModelDetails;
   bool _isLoading = true;
   bool _autoTitleEnabled = true;
+  String _systemPrompt = '';
 
   @override
   void initState() {
@@ -28,9 +29,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final autoTitleEnabled = await DefaultModelService.getAutoTitleEnabled();
+    final systemPrompt = await DefaultModelService.getSystemPrompt();
     if (mounted) {
       setState(() {
         _autoTitleEnabled = autoTitleEnabled;
+        _systemPrompt = systemPrompt;
       });
     }
   }
@@ -181,6 +184,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 16),
 
+          // System Prompt Section
+          _buildSectionHeader('System Prompt'),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const Icon(Icons.chat),
+              title: const Text('Customize System Prompt'),
+              subtitle: Text(
+                _systemPrompt.length > 50 
+                    ? '${_systemPrompt.substring(0, 50)}...' 
+                    : _systemPrompt,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.edit),
+              onTap: () => _showSystemPromptDialog(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           // MCP Servers Section
           _buildSectionHeader('MCP Servers'),
           Card(
@@ -303,6 +327,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSystemPromptDialog() {
+    final controller = TextEditingController(text: _systemPrompt);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('System Prompt'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This prompt is sent to the AI with every conversation:',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'Enter system prompt',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 5,
+                autofocus: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await DefaultModelService.resetSystemPrompt();
+              final defaultPrompt = await DefaultModelService.getSystemPrompt();
+              setState(() {
+                _systemPrompt = defaultPrompt;
+              });
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('System prompt reset to default')),
+                );
+              }
+            },
+            child: const Text('Reset to Default'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newPrompt = controller.text.trim();
+              if (newPrompt.isNotEmpty) {
+                await DefaultModelService.setSystemPrompt(newPrompt);
+                setState(() {
+                  _systemPrompt = newPrompt;
+                });
+              }
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
           ),
         ],
       ),

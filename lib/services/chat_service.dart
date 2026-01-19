@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import 'openrouter_service.dart';
 import 'mcp_client_service.dart';
+import 'default_model_service.dart';
 
 /// Service that handles the chat event loop, decoupled from UI
 class ChatService {
@@ -38,13 +39,17 @@ class ChatService {
   }) async {
     int iterationCount = 0;
 
+    // Get system prompt
+    final systemPrompt = await DefaultModelService.getSystemPrompt();
+
     while (iterationCount < maxIterations) {
       iterationCount++;
 
-      // Build API messages from current message list
-      final apiMessages = messages
-          .map<Map<String, dynamic>>((msg) => msg.toApiMessage())
-          .toList();
+      // Build API messages from current message list, prepending system prompt
+      final apiMessages = [
+        {'role': 'system', 'content': systemPrompt},
+        ...messages.map<Map<String, dynamic>>((msg) => msg.toApiMessage()),
+      ];
 
       print(
         'ChatService: Iteration $iterationCount with ${apiMessages.length} messages',

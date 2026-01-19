@@ -312,7 +312,11 @@ class _ChatScreenState extends State<ChatScreen> {
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(conversation.title),
+                Text(
+                  conversation.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 Row(
                   children: [
                     Flexible(
@@ -688,7 +692,7 @@ class _ChatScreenState extends State<ChatScreen> {
         {
           'role': 'user',
           'content':
-              'Based on this conversation, generate a short, descriptive title (maximum 6 words, no quotes): ${messages.first.content}',
+              'Based on this conversation, generate a short, descriptive title (less than 10 words, no quotes): ${messages.first.content}',
         },
       ];
 
