@@ -37,6 +37,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String _streamingReasoning = '';
   ChatService? _chatService;
   String? _currentToolName;
+  bool _isToolExecuting = false; // true = calling, false = called
 
   @override
   void initState() {
@@ -217,6 +218,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _streamingContent = '';
             _streamingReasoning = '';
             _currentToolName = null;
+            _isToolExecuting = false;
           });
         }
       }
@@ -244,6 +246,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _streamingContent = event.content;
         _currentToolName = null; // Clear tool name when content is streaming
+        _isToolExecuting = false;
       });
       _scrollToBottom();
     } else if (event is ReasoningChunk) {
@@ -263,16 +266,20 @@ class _ChatScreenState extends State<ChatScreen> {
     } else if (event is ToolExecutionStarted) {
       setState(() {
         _currentToolName = event.toolName;
+        _isToolExecuting = true; // Now calling the tool
       });
     } else if (event is ToolExecutionCompleted) {
       setState(() {
-        _currentToolName = null;
+        // Keep the tool name but mark as completed
+        _isToolExecuting = false;
       });
     } else if (event is ConversationComplete) {
       setState(() {
         _streamingContent = '';
         _streamingReasoning = '';
         _currentToolName = null;
+        _isToolExecuting = false;
+        _isLoading = false;
       });
     } else if (event is MaxIterationsReached) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -408,10 +415,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     }
 
-                    print(
-                      'ChatScreen: Building ListView with ${messages.length} messages, streaming content length: ${_streamingContent.length}',
-                    );
-
                     // Filter messages based on thinking mode and role
                     final displayMessages = messages.where((msg) {
                       // Always show user messages
@@ -468,6 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: streamingMessage,
                             isStreaming: true,
+                            showThinking: _showThinking,
                           );
                         }
 
@@ -479,7 +483,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             content:
                                 '✅ **Result from ${message.toolName}:**\n\n${message.content}',
                           );
-                          return MessageBubble(message: formattedMessage);
+                          return MessageBubble(
+                            message: formattedMessage,
+                            showThinking: _showThinking,
+                          );
                         }
 
                         // Format assistant messages with tool calls
@@ -557,7 +564,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             toolCallId: message.toolCallId,
                             toolName: message.toolName,
                           );
-                          return MessageBubble(message: formattedMessage);
+                          return MessageBubble(
+                            message: formattedMessage,
+                            showThinking: _showThinking,
+                          );
                         } else if (message.role == MessageRole.assistant &&
                             message.toolCallData != null &&
                             !_showThinking) {
@@ -565,7 +575,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           return const SizedBox.shrink();
                         }
 
-                        return MessageBubble(message: message);
+                        return MessageBubble(
+                          message: message,
+                          showThinking: _showThinking,
+                        );
                       },
                     );
                   },
@@ -585,7 +598,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       const SizedBox(width: 12),
                       Text(
                         _currentToolName != null
-                            ? 'Calling tool $_currentToolName...'
+                            ? (_isToolExecuting
+                                ? 'Calling tool $_currentToolName...'
+                                : 'Called tool $_currentToolName')
                             : 'Thinking...',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],

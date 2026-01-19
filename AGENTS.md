@@ -1,4 +1,5 @@
 **IMPORTANT**: before you do anything else, run the `beans prime` command and heed its output.
+**IMPORTANT**: Read files in their entirety, do not read portions of files unless the contents are longer than 2000 lines.
 
 ## Project Overview
 

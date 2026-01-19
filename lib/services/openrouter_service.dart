@@ -240,9 +240,6 @@ class OpenRouterService {
         await for (final chunk in stream) {
           chunkCount++;
           final text = utf8.decode(chunk);
-          print(
-            'OpenRouter: Received chunk #$chunkCount: ${text.substring(0, text.length > 100 ? 100 : text.length)}...',
-          );
           buffer += text;
 
           // Process complete lines
@@ -346,24 +343,21 @@ class OpenRouterService {
                     }
 
                     if (reasoningText != null && reasoningText.isNotEmpty) {
-                      print(
-                        'OpenRouter: Yielding reasoning ($type): "$reasoningText"',
-                      );
                       yield 'REASONING:$reasoningText';
                     }
                   }
                 }
 
+                // Check for reasoning_content field (used by some models like DeepSeek)
+                final reasoningContent = delta?['reasoning_content'] as String?;
+                if (reasoningContent != null && reasoningContent.isNotEmpty) {
+                  yield 'REASONING:$reasoningContent';
+                }
+
                 // Also check for regular content
                 final content = delta?['content'] as String?;
                 if (content != null && content.isNotEmpty) {
-                  print('OpenRouter: Yielding content: "$content"');
                   yield content;
-                }
-
-                // Log the full delta for debugging
-                if (delta != null && delta.isNotEmpty) {
-                  print('OpenRouter: Full delta keys: ${delta.keys.toList()}');
                 }
               }
             } catch (e) {

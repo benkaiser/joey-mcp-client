@@ -6,18 +6,24 @@ import '../models/message.dart';
 class MessageBubble extends StatelessWidget {
   final Message message;
   final bool isStreaming;
+  final bool showThinking;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.isStreaming = false,
+    this.showThinking = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
     final timeFormat = DateFormat('h:mm a');
-    final isLoading = !isUser && message.content.isEmpty && !isStreaming;
+    final isLoading =
+        !isUser &&
+        message.content.isEmpty &&
+        !isStreaming &&
+        (message.reasoning == null || message.reasoning!.isEmpty);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -86,6 +92,7 @@ class MessageBubble extends StatelessWidget {
                           children: [
                             // Show reasoning first if present (for assistant messages)
                             if (!isUser &&
+                                showThinking &&
                                 message.reasoning != null &&
                                 message.reasoning!.isNotEmpty) ...[
                               Container(

@@ -108,9 +108,11 @@ class ChatService {
           id: const Uuid().v4(),
           conversationId: conversationId,
           role: MessageRole.assistant,
-          content: streamedContent,
+          content: streamedContent.trim(),
           timestamp: DateTime.now(),
-          reasoning: streamedReasoning.isNotEmpty ? streamedReasoning : null,
+          reasoning: streamedReasoning.trim().isNotEmpty
+              ? streamedReasoning.trim()
+              : null,
           toolCallData: jsonEncode(detectedToolCalls),
         );
 
@@ -147,10 +149,37 @@ class ChatService {
           role: MessageRole.assistant,
           content: streamedContent,
           timestamp: DateTime.now(),
-          reasoning: streamedReasoning.isNotEmpty ? streamedReasoning : null,
+          reasoning: streamedReasoning.trim().isNotEmpty
+              ? streamedReasoning.trim()
+              : null,
         );
 
         _eventController.add(MessageCreated(message: finalMessage));
+        messages.add(finalMessage);
+
+        // Dump final message state to console
+        print('\n===== FINAL MESSAGE DUMP =====');
+        for (int i = 0; i < messages.length; i++) {
+          final msg = messages[i];
+          print('Message $i:');
+          print('  Role: ${msg.role.toString()}');
+          print('  Content: ${msg.content}');
+          if (msg.reasoning != null) {
+            print('  Reasoning: ${msg.reasoning}');
+          }
+          if (msg.toolCallData != null) {
+            print('  Tool Call Data: ${msg.toolCallData}');
+          }
+          if (msg.toolName != null) {
+            print('  Tool Name: ${msg.toolName}');
+          }
+          if (msg.toolCallId != null) {
+            print('  Tool Call ID: ${msg.toolCallId}');
+          }
+          print('');
+        }
+        print('==============================\n');
+
         _eventController.add(ConversationComplete());
         break;
       }
