@@ -235,6 +235,7 @@ class OpenRouterService {
         final stream = response.data!.stream;
         String buffer = '';
         int chunkCount = 0;
+        List<Map<String, dynamic>> accumulatedToolCalls = [];
 
         await for (final chunk in stream) {
           chunkCount++;
@@ -255,6 +256,13 @@ class OpenRouterService {
             final data = line.substring(6); // Remove 'data: ' prefix
             if (data == '[DONE]') {
               print('OpenRouter: Stream completed with [DONE]');
+              // Emit accumulated tool calls if any
+              if (accumulatedToolCalls.isNotEmpty) {
+                print(
+                  'OpenRouter: Emitting ${accumulatedToolCalls.length} accumulated tool calls',
+                );
+                yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
+              }
               continue;
             }
 
@@ -272,6 +280,54 @@ class OpenRouterService {
               final choices = json['choices'] as List<dynamic>?;
               if (choices != null && choices.isNotEmpty) {
                 final delta = choices[0]['delta'] as Map<String, dynamic>?;
+
+                // Check for tool calls in delta
+                final toolCallsDeltas = delta?['tool_calls'] as List<dynamic>?;
+                if (toolCallsDeltas != null && toolCallsDeltas.isNotEmpty) {
+                  for (final toolCallDelta in toolCallsDeltas) {
+                    final tcMap = toolCallDelta as Map<String, dynamic>;
+                    final index = tcMap['index'] as int? ?? 0;
+
+                    // Ensure we have space in the array
+                    while (accumulatedToolCalls.length <= index) {
+                      accumulatedToolCalls.add({
+                        'id': '',
+                        'type': 'function',
+                        'function': {'name': '', 'arguments': ''},
+                      });
+                    }
+
+                    // Accumulate tool call data
+                    if (tcMap['id'] != null) {
+                      accumulatedToolCalls[index]['id'] = tcMap['id'];
+                    }
+                    if (tcMap['type'] != null) {
+                      accumulatedToolCalls[index]['type'] = tcMap['type'];
+                    }
+
+                    final functionDelta =
+                        tcMap['function'] as Map<String, dynamic>?;
+                    if (functionDelta != null) {
+                      final currentFunction =
+                          accumulatedToolCalls[index]['function']
+                              as Map<String, dynamic>;
+                      if (functionDelta['name'] != null) {
+                        currentFunction['name'] =
+                            (currentFunction['name'] as String) +
+                            (functionDelta['name'] as String);
+                      }
+                      if (functionDelta['arguments'] != null) {
+                        currentFunction['arguments'] =
+                            (currentFunction['arguments'] as String) +
+                            (functionDelta['arguments'] as String);
+                      }
+                    }
+
+                    print(
+                      'OpenRouter: Accumulated tool call at index $index: ${accumulatedToolCalls[index]}',
+                    );
+                  }
+                }
 
                 // Check for reasoning_details array (OpenRouter's structured format)
                 final reasoningDetails =
@@ -312,6 +368,7 @@ class OpenRouterService {
               }
             } catch (e) {
               print('OpenRouter: Failed to parse JSON line: $line');
+              print('  Error: $e');
               // Skip invalid JSON lines
               continue;
             }

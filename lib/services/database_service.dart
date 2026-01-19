@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 7,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -46,7 +46,7 @@ class DatabaseService {
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         timestamp TEXT NOT NULL,
-        isDisplayOnly INTEGER NOT NULL DEFAULT 0,
+        reasoning TEXT,
         toolCallData TEXT,
         toolCallId TEXT,
         toolName TEXT,
@@ -138,6 +138,42 @@ class DatabaseService {
         ALTER TABLE messages ADD COLUMN toolName TEXT
       ''');
     }
+    if (oldVersion < 6) {
+      // Remove isDisplayOnly column - we'll handle this in the UI
+      // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+      await db.execute('''
+        CREATE TABLE messages_new (
+          id TEXT PRIMARY KEY,
+          conversationId TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          toolCallData TEXT,
+          toolCallId TEXT,
+          toolName TEXT,
+          FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute('''
+        INSERT INTO messages_new (id, conversationId, role, content, timestamp, toolCallData, toolCallId, toolName)
+        SELECT id, conversationId, role, content, timestamp, toolCallData, toolCallId, toolName
+        FROM messages
+      ''');
+
+      await db.execute('DROP TABLE messages');
+      await db.execute('ALTER TABLE messages_new RENAME TO messages');
+
+      await db.execute('''
+        CREATE INDEX idx_messages_conversation ON messages(conversationId)
+      ''');
+    }
+    if (oldVersion < 7) {
+      // Add reasoning column to messages table
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN reasoning TEXT
+      ''');
+    }
   }
 
   // Conversation operations
@@ -194,11 +230,7 @@ class DatabaseService {
 
   Future<void> deleteMessage(String messageId) async {
     final db = await database;
-    await db.delete(
-      'messages',
-      where: 'id = ?',
-      whereArgs: [messageId],
-    );
+    await db.delete('messages', where: 'id = ?', whereArgs: [messageId]);
   }
 
   Future<List<Message>> getMessagesForConversation(

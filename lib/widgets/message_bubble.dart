@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../models/message.dart';
 
@@ -7,7 +8,7 @@ class MessageBubble extends StatelessWidget {
   final bool isStreaming;
 
   const MessageBubble({
-    super.key, 
+    super.key,
     required this.message,
     this.isStreaming = false,
   });
@@ -83,16 +84,128 @@ class MessageBubble extends StatelessWidget {
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              message.content,
-                              style: TextStyle(
-                                color: isUser
-                                    ? Theme.of(context).colorScheme.onPrimary
-                                    : Theme.of(
+                            // Show reasoning first if present (for assistant messages)
+                            if (!isUser &&
+                                message.reasoning != null &&
+                                message.reasoning!.isNotEmpty) ...[
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHigh
+                                      .withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.outline
+                                        .withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.psychology,
+                                      size: 16,
+                                      color: Theme.of(
                                         context,
-                                      ).colorScheme.onSurfaceVariant,
+                                      ).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: MarkdownBody(
+                                        data: message.reasoning!,
+                                        selectable: true,
+                                        styleSheet: MarkdownStyleSheet(
+                                          p: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                            fontSize: 13,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 8),
+                            ],
+                            // Use markdown for assistant messages, plain text for user messages
+                            if (isUser)
+                              SelectableText(
+                                message.content,
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                ),
+                              )
+                            else if (message.content.isNotEmpty)
+                              MarkdownBody(
+                                data: message.content,
+                                selectable: true,
+                                styleSheet: MarkdownStyleSheet(
+                                  p: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                  code: TextStyle(
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHigh,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
+                                  codeblockDecoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHigh,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  blockquoteDecoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHigh,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  h1: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  h2: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  h3: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  listBullet: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                  a: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
                             if (isStreaming) ...[
                               const SizedBox(height: 4),
                               Container(

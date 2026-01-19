@@ -13,8 +13,7 @@ class Message {
   final MessageRole role;
   final String content;
   final DateTime timestamp;
-  final bool
-  isDisplayOnly; // If true, don't send to LLM (for tool call displays)
+  final String? reasoning; // Reasoning/thinking content for assistant messages
   final String?
   toolCallData; // JSON string of tool calls for assistant messages
   final String? toolCallId; // For tool role messages
@@ -26,7 +25,7 @@ class Message {
     required this.role,
     required this.content,
     required this.timestamp,
-    this.isDisplayOnly = false,
+    this.reasoning,
     this.toolCallData,
     this.toolCallId,
     this.toolName,
@@ -39,7 +38,7 @@ class Message {
       'role': role.name,
       'content': content,
       'timestamp': timestamp.toIso8601String(),
-      'isDisplayOnly': isDisplayOnly ? 1 : 0,
+      'reasoning': reasoning,
       'toolCallData': toolCallData,
       'toolCallId': toolCallId,
       'toolName': toolName,
@@ -53,7 +52,7 @@ class Message {
       role: MessageRole.values.firstWhere((e) => e.name == map['role']),
       content: map['content'],
       timestamp: DateTime.parse(map['timestamp']),
-      isDisplayOnly: map['isDisplayOnly'] == 1,
+      reasoning: map['reasoning'],
       toolCallData: map['toolCallData'],
       toolCallId: map['toolCallId'],
       toolName: map['toolName'],
@@ -66,7 +65,7 @@ class Message {
     MessageRole? role,
     String? content,
     DateTime? timestamp,
-    bool? isDisplayOnly,
+    String? reasoning,
     String? toolCallData,
     String? toolCallId,
     String? toolName,
@@ -77,7 +76,7 @@ class Message {
       role: role ?? this.role,
       content: content ?? this.content,
       timestamp: timestamp ?? this.timestamp,
-      isDisplayOnly: isDisplayOnly ?? this.isDisplayOnly,
+      reasoning: reasoning ?? this.reasoning,
       toolCallData: toolCallData ?? this.toolCallData,
       toolCallId: toolCallId ?? this.toolCallId,
       toolName: toolName ?? this.toolName,

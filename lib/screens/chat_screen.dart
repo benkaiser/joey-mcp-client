@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +10,7 @@ import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
 import '../services/database_service.dart';
 import '../services/mcp_client_service.dart';
+import '../services/chat_service.dart';
 import '../widgets/message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -33,9 +33,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, McpClientService> _mcpClients = {};
   final Map<String, List<McpTool>> _mcpTools = {};
   bool _showThinking = true;
-  String? _streamingMessageId;
   String _streamingContent = '';
   String _streamingReasoning = '';
+  ChatService? _chatService;
+  String? _currentToolName;
 
   @override
   void initState() {
@@ -99,6 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
+    _chatService?.dispose();
     // Close all MCP clients
     for (final client in _mcpClients.values) {
       client.close();
@@ -136,7 +138,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     try {
-      print('=== _sendMessage called ===');
       final text = _messageController.text.trim();
       if (text.isEmpty) return;
 
@@ -153,56 +154,39 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       await provider.addMessage(userMessage);
-
       _messageController.text = '';
-
       _scrollToBottom();
 
       // Get AI response
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _streamingContent = '';
+      });
 
       try {
-      // Get all messages for context
-      final messages = provider.getMessages(widget.conversation.id);
+        // Initialize ChatService if not already done
+        if (_chatService == null) {
+          _chatService = ChatService(
+            openRouterService: openRouterService,
+            mcpClients: _mcpClients,
+            mcpTools: _mcpTools,
+          );
 
-        // Format messages for OpenRouter API (exclude display-only messages)
-      final apiMessages = messages
-            .where((msg) => !msg.isDisplayOnly) // Exclude tool display messages
-            .map<Map<String, dynamic>>((msg) => msg.toApiMessage())
-          .toList();
+          // Listen to chat events
+          _chatService!.events.listen((event) {
+            _handleChatEvent(event, provider);
+          });
+        }
 
-        print(
-          'ChatScreen: Built apiMessages with ${apiMessages.length} messages',
+        // Get all messages for context
+        final messages = provider.getMessages(widget.conversation.id);
+
+        // Run the agentic loop in the chat service
+        await _chatService!.runAgenticLoop(
+          conversationId: widget.conversation.id,
+          model: widget.conversation.model,
+          messages: List.from(messages), // Pass a copy
         );
-        print('ChatScreen: Full apiMessages structure:');
-        for (int i = 0; i < apiMessages.length; i++) {
-          print('  [$i]: ${jsonEncode(apiMessages[i])}');
-        }
-
-        // Aggregate all tools from MCP servers
-        final allTools = <Map<String, dynamic>>[];
-        for (final tools in _mcpTools.values) {
-          allTools.addAll(tools.map((t) => t.toJson()));
-        }
-
-        // Use non-streaming when tools available to detect tool calls,
-        // but use streaming for final responses
-        if (allTools.isNotEmpty) {
-          await _handleNonStreamingResponse(
-            openRouterService,
-            apiMessages,
-            allTools,
-            provider,
-          );
-        } else {
-          // No tools, use streaming
-          await _handleStreamingResponse(
-            openRouterService,
-            apiMessages,
-            allTools,
-            provider,
-          );
-        }
 
         // Auto-generate title after first response if enabled
         if (!_hasGeneratedTitle && mounted) {
@@ -216,13 +200,8 @@ class _ChatScreenState extends State<ChatScreen> {
       } on OpenRouterAuthException {
         _handleAuthError();
       } catch (e, stackTrace) {
-        // Show error message
-        print('=== INNER CATCH: Error in _sendMessage ===');
-        print('Error: $e');
-        print('Error type: ${e.runtimeType}');
-        print('Stack trace:');
-        print(stackTrace);
-        print('========================================');
+        print('Error in _sendMessage: $e');
+        print('Stack trace: $stackTrace');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -232,15 +211,18 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         }
       } finally {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _streamingContent = '';
+            _streamingReasoning = '';
+            _currentToolName = null;
+          });
+        }
       }
     } catch (e, stackTrace) {
-      print('=== OUTER CATCH: Fatal error in _sendMessage ===');
-      print('Error: $e');
-      print('Error type: ${e.runtimeType}');
-      print('Stack trace:');
-      print(stackTrace);
-      print('==============================================');
+      print('Fatal error in _sendMessage: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -254,353 +236,58 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _handleStreamingResponse(
-    OpenRouterService openRouterService,
-    List<Map<String, dynamic>> apiMessages,
-    List<Map<String, dynamic>> allTools,
-    ConversationProvider provider,
-  ) async {
-    // Create a placeholder message for streaming
-    final messageId = const Uuid().v4();
-    final assistantMessage = Message(
-      id: messageId,
-      conversationId: widget.conversation.id,
-      role: MessageRole.assistant,
-      content: '', // Start empty, will be updated
-      timestamp: DateTime.now(),
-    );
-    await provider.addMessage(assistantMessage);
-    _scrollToBottom();
+  /// Handle events from the ChatService
+  void _handleChatEvent(ChatEvent event, ConversationProvider provider) {
+    if (!mounted) return;
 
-    setState(() {
-      _streamingMessageId = messageId;
-      _streamingContent = '';
-    });
-
-    try {
-      print('ChatScreen: Starting stream for message $messageId');
-      int tokenCount = 0;
-      await for (final chunk in openRouterService.chatCompletionStream(
-        model: widget.conversation.model,
-        messages: apiMessages,
-        tools: allTools.isNotEmpty ? allTools : null,
-      )) {
-        if (!mounted) break;
-
-        tokenCount++;
-        print('ChatScreen: Received token #$tokenCount: "$chunk"');
-
-        setState(() {
-          // Separate reasoning from content based on prefix
-          if (chunk.startsWith('REASONING:')) {
-            // Remove the prefix and add to reasoning
-            _streamingReasoning += chunk.substring('REASONING:'.length);
-            print(
-              'ChatScreen: Added to reasoning, total length=${_streamingReasoning.length}',
-            );
-          } else {
-            // Regular content
-            _streamingContent += chunk;
-            print(
-              'ChatScreen: Added to content, total length=${_streamingContent.length}',
-            );
-          }
-        });
-
-        _scrollToBottom();
-      }
-
-      print('ChatScreen: Stream completed with $tokenCount tokens');
-
-      // Only update database once at the end
-      if (mounted) {
-        if (_streamingContent.isNotEmpty) {
-          await provider.updateMessage(
-            messageId,
-            _streamingContent, // Only save the actual content, not reasoning
-          );
-        } else {
-          // No content received, delete the placeholder message
-          await provider.deleteMessage(messageId);
-        }
-      }
-    } catch (e, stackTrace) {
-      print('ChatScreen: Error in streaming response:');
-      print('Error: $e');
-      print('Stack trace: $stackTrace');
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error during streaming: $e')));
-      }
-      rethrow;
-    } finally {
+    if (event is ContentChunk) {
       setState(() {
-        _streamingMessageId = null;
-        _streamingContent = '';
-        _streamingReasoning = ''; // Clear reasoning too
+        _streamingContent = event.content;
+        _currentToolName = null; // Clear tool name when content is streaming
       });
-    }
-  }
-
-  Future<void> _handleNonStreamingResponse(
-    OpenRouterService openRouterService,
-    List<Map<String, dynamic>> apiMessages,
-    List<Map<String, dynamic>> allTools,
-    ConversationProvider provider,
-  ) async {
-    // Make non-streaming API request to handle tool calls
-    final response = await openRouterService.chatCompletion(
-      model: widget.conversation.model,
-      messages: apiMessages,
-      tools: allTools.isNotEmpty ? allTools : null,
-    );
-
-    // Process response
-    final choices = response['choices'] as List;
-    if (choices.isEmpty) {
-      throw Exception('No response from API');
-    }
-
-    final choice = choices[0];
-    final message = choice['message'];
-    final toolCalls = message['tool_calls'] as List?;
-
-    if (toolCalls != null && toolCalls.isNotEmpty) {
-      // Handle tool calls
-      await _handleToolCalls(
-        toolCalls,
-        provider,
-        openRouterService,
-        apiMessages,
-        allTools,
-      );
-    } else {
-      // No tool calls, just show the response
-      final content = message['content'] as String? ?? '';
-      final assistantMessage = Message(
-        id: const Uuid().v4(),
-        conversationId: widget.conversation.id,
-        role: MessageRole.assistant,
-        content: content,
-        timestamp: DateTime.now(),
-      );
-      await provider.addMessage(assistantMessage);
       _scrollToBottom();
-    }
-  }
-
-  Future<void> _handleToolCalls(
-    List toolCalls,
-    ConversationProvider provider,
-    OpenRouterService openRouterService,
-    List<Map<String, dynamic>> apiMessages,
-    List<Map<String, dynamic>> allTools,
-  ) async {
-    // Show tool call messages with arguments
-    for (final toolCall in toolCalls) {
-      final toolName = toolCall['function']['name'];
-      final toolArgsStr = toolCall['function']['arguments'];
-
-      // Parse arguments for display
-      String argsDisplay = '';
-      try {
-        final Map<String, dynamic> toolArgs;
-        if (toolArgsStr is String) {
-          toolArgs = Map<String, dynamic>.from(
-            const JsonCodec().decode(toolArgsStr),
-          );
-        } else {
-          toolArgs = Map<String, dynamic>.from(toolArgsStr);
-        }
-
-        if (toolArgs.isNotEmpty) {
-          final prettyArgs = const JsonEncoder.withIndent(
-            '  ',
-          ).convert(toolArgs);
-          argsDisplay = '\n\nArguments:\n```json\n$prettyArgs\n```';
-        }
-      } catch (e) {
-        argsDisplay = '\n\nArguments: (failed to parse)';
-      }
-
-      final toolMessage = Message(
-        id: const Uuid().v4(),
-        conversationId: widget.conversation.id,
-        role: MessageRole.assistant,
-        content: '🔧 Calling tool: $toolName$argsDisplay',
-        timestamp: DateTime.now(),
-        isDisplayOnly: true, // Don't send this to the LLM
-      );
-      await provider.addMessage(toolMessage);
-    }
-    _scrollToBottom();
-
-    // Save the assistant message with tool_calls (for API reconstruction)
-    final toolCallMessage = Message(
-      id: const Uuid().v4(),
-      conversationId: widget.conversation.id,
-      role: MessageRole.assistant,
-      content: '', // Empty content for tool call messages
-      timestamp: DateTime.now(),
-      toolCallData: jsonEncode(toolCalls),
-    );
-    await provider.addMessage(toolCallMessage);
-
-    // Execute tool calls
-    final toolResults = <Map<String, dynamic>>[];
-    for (final toolCall in toolCalls) {
-      final toolId = toolCall['id'];
-      final toolName = toolCall['function']['name'];
-      final toolArgsStr = toolCall['function']['arguments'];
-
-      // Parse arguments
-      final Map<String, dynamic> toolArgs;
-      if (toolArgsStr is String) {
-        toolArgs = Map<String, dynamic>.from(
-          const JsonCodec().decode(toolArgsStr),
-        );
-      } else {
-        toolArgs = Map<String, dynamic>.from(toolArgsStr);
-      }
-
-      // Find which MCP server has this tool
-      String? result;
-      for (final entry in _mcpTools.entries) {
-        final serverId = entry.key;
-        final tools = entry.value;
-
-        if (tools.any((t) => t.name == toolName)) {
-          // Execute the tool
-          try {
-            final mcpClient = _mcpClients[serverId];
-            if (mcpClient != null) {
-              final toolResult = await mcpClient.callTool(toolName, toolArgs);
-              result = toolResult.content.map((c) => c.text ?? '').join('\n');
-            }
-          } catch (e) {
-            result = 'Error executing tool: $e';
-          }
-          break;
-        }
-      }
-
-      toolResults.add({
-        'tool_call_id': toolId,
-        'role': 'tool',
-        'name': toolName,
-        'content': result ?? 'Tool not found',
-      });
-
-      // Save tool result message (for API reconstruction - not displayed)
-      final toolResultMessage = Message(
-        id: const Uuid().v4(),
-        conversationId: widget.conversation.id,
-        role: MessageRole.tool,
-        content: result ?? 'Tool not found',
-        timestamp: DateTime.now(),
-        toolCallId: toolId,
-        toolName: toolName,
-      );
-      await provider.addMessage(toolResultMessage);
-
-      // Create a display-only message to show the result when thinking is enabled
-      final displayResult = result ?? 'Tool not found';
-      final displayMessage = Message(
-        id: const Uuid().v4(),
-        conversationId: widget.conversation.id,
-        role: MessageRole.assistant,
-        content: '✅ Result from $toolName:\n\n$displayResult',
-        timestamp: DateTime.now(),
-        isDisplayOnly: true, // Don't send this to the LLM
-      );
-      await provider.addMessage(displayMessage);
-      _scrollToBottom();
-    }
-
-    // Reload messages to get the tool calls and results we just saved
-    final updatedMessages = provider.getMessages(widget.conversation.id);
-    final updatedApiMessages = updatedMessages
-        .where((msg) => !msg.isDisplayOnly)
-        .map<Map<String, dynamic>>((msg) => msg.toApiMessage())
-        .toList();
-
-    // Get final response with tool results using streaming to capture reasoning
-    final messageId = const Uuid().v4();
-    final assistantMessage = Message(
-      id: messageId,
-      conversationId: widget.conversation.id,
-      role: MessageRole.assistant,
-      content: '',
-      timestamp: DateTime.now(),
-    );
-    await provider.addMessage(assistantMessage);
-    _scrollToBottom();
-
-    setState(() {
-      _streamingMessageId = messageId;
-      _streamingContent = '';
-      _streamingReasoning = '';
-    });
-
-    try {
-      print(
-        'ChatScreen: Starting stream for tool response with ${updatedApiMessages.length} messages',
-      );
-      print('ChatScreen: Full updatedApiMessages structure:');
-      for (int i = 0; i < updatedApiMessages.length; i++) {
-        print('  [$i]: ${jsonEncode(updatedApiMessages[i])}');
-      }
-
-      await for (final chunk in openRouterService.chatCompletionStream(
-        model: widget.conversation.model,
-        messages: updatedApiMessages,
-        tools: allTools,
-      )) {
-        if (!mounted) break;
-
-        print('ChatScreen: RAW CHUNK: "$chunk"');
-
-        setState(() {
-          if (chunk.startsWith('REASONING:')) {
-            _streamingReasoning += chunk.substring('REASONING:'.length);
-          } else {
-            _streamingContent += chunk;
-          }
-        });
-        _scrollToBottom();
-      }
-
-      print('ChatScreen: FINAL RAW CONTENT: "$_streamingContent"');
-      print('ChatScreen: FINAL RAW REASONING: "$_streamingReasoning"');
-
-      // Update message with final content
-      if (mounted) {
-        if (_streamingContent.isNotEmpty) {
-          await provider.updateMessage(messageId, _streamingContent);
-        } else {
-          // No content received, delete the placeholder message
-          await provider.deleteMessage(messageId);
-        }
-      }
-    } catch (e, stackTrace) {
-      print('ChatScreen: Error in tool response streaming:');
-      print('Error: $e');
-      print('Stack trace: $stackTrace');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error during tool response: $e')),
-        );
-      }
-      rethrow;
-    } finally {
+    } else if (event is ReasoningChunk) {
       setState(() {
-        _streamingMessageId = null;
+        _streamingReasoning = event.content;
+      });
+      _scrollToBottom();
+    } else if (event is MessageCreated) {
+      // Clear streaming state when message is persisted
+      setState(() {
         _streamingContent = '';
         _streamingReasoning = '';
       });
+      // Add message to provider
+      provider.addMessage(event.message);
+      _scrollToBottom();
+    } else if (event is ToolExecutionStarted) {
+      setState(() {
+        _currentToolName = event.toolName;
+      });
+    } else if (event is ToolExecutionCompleted) {
+      setState(() {
+        _currentToolName = null;
+      });
+    } else if (event is ConversationComplete) {
+      setState(() {
+        _streamingContent = '';
+        _streamingReasoning = '';
+        _currentToolName = null;
+      });
+    } else if (event is MaxIterationsReached) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum tool call iterations reached'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } else if (event is ErrorOccurred) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${event.error}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -722,71 +409,162 @@ class _ChatScreenState extends State<ChatScreen> {
                     }
 
                     print(
-                      'ChatScreen: Building ListView with ${messages.length} messages, streaming: $_streamingMessageId, content length: ${_streamingContent.length}',
+                      'ChatScreen: Building ListView with ${messages.length} messages, streaming content length: ${_streamingContent.length}',
                     );
 
-                    // Filter messages based on thinking mode
+                    // Filter messages based on thinking mode and role
                     final displayMessages = messages.where((msg) {
                       // Always show user messages
                       if (msg.role == MessageRole.user) return true;
-                      
-                      // Hide display-only messages when thinking is hidden
-                      if (!_showThinking && msg.isDisplayOnly) return false;
-                      
-                      // Hide tool role messages (internal only, always hidden from UI)
-                      // These are sent to the API but never shown to users
-                      if (msg.role == MessageRole.tool) return false;
-                      
-                      // Hide empty assistant messages unless they're actively streaming
-                      if (msg.role == MessageRole.assistant && 
-                          msg.content.isEmpty && 
-                          msg.id != _streamingMessageId) {
+
+                      // Hide tool role messages when thinking is disabled
+                      // Show them when thinking is enabled for transparency
+                      if (msg.role == MessageRole.tool) {
+                        return _showThinking;
+                      }
+
+                      // Hide empty assistant messages without tool calls or reasoning
+                      if (msg.role == MessageRole.assistant &&
+                          msg.content.isEmpty &&
+                          msg.reasoning == null &&
+                          msg.toolCallData == null) {
                         return false;
                       }
-                      
+
+                      // Hide assistant messages with tool calls when thinking is disabled
+                      if (msg.role == MessageRole.assistant &&
+                          msg.toolCallData != null &&
+                          !_showThinking) {
+                        return false;
+                      }
+
                       return true;
                     }).toList();
 
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: displayMessages.length,
+                      itemCount:
+                          displayMessages.length +
+                          ((_streamingContent.isNotEmpty ||
+                                  _streamingReasoning.isNotEmpty)
+                              ? 1
+                              : 0),
                       itemBuilder: (context, index) {
-                        final message = displayMessages[index];
-                        // If this is the streaming message, show live content
-                        if (message.id == _streamingMessageId) {
-                          print(
-                            'ChatScreen: Rendering streaming message ${message.id} with reasoning: ${_streamingReasoning.length}, content: ${_streamingContent.length}',
+                        // Show streaming content as last item
+                        if ((_streamingContent.isNotEmpty ||
+                                _streamingReasoning.isNotEmpty) &&
+                            index == displayMessages.length) {
+                          final streamingMessage = Message(
+                            id: 'streaming',
+                            conversationId: widget.conversation.id,
+                            role: MessageRole.assistant,
+                            content: _streamingContent,
+                            timestamp: DateTime.now(),
+                            reasoning: _streamingReasoning.isNotEmpty
+                                ? _streamingReasoning
+                                : null,
                           );
-
-                          // Build content with reasoning if available
-                          String displayContent = '';
-                          if (_showThinking && _streamingReasoning.isNotEmpty) {
-                            displayContent =
-                                '<thinking>\n$_streamingReasoning\n</thinking>\n\n';
-                          }
-                          displayContent += _streamingContent;
-
-                          if (displayContent.isNotEmpty) {
-                            final streamingMessage = Message(
-                              id: message.id,
-                              conversationId: message.conversationId,
-                              role: message.role,
-                              content: displayContent,
-                              timestamp: message.timestamp,
-                            );
-                            return MessageBubble(
-                              message: streamingMessage,
-                              isStreaming: true,
-                            );
-                          } else {
-                            // Show empty message with streaming indicator
-                            return MessageBubble(
-                              message: message,
-                              isStreaming: true,
-                            );
-                          }
+                          return MessageBubble(
+                            message: streamingMessage,
+                            isStreaming: true,
+                          );
                         }
+
+                        final message = displayMessages[index];
+
+                        // Format tool result messages
+                        if (message.role == MessageRole.tool && _showThinking) {
+                          final formattedMessage = message.copyWith(
+                            content:
+                                '✅ **Result from ${message.toolName}:**\n\n${message.content}',
+                          );
+                          return MessageBubble(message: formattedMessage);
+                        }
+
+                        // Format assistant messages with tool calls
+                        if (message.role == MessageRole.assistant &&
+                            message.toolCallData != null &&
+                            _showThinking) {
+                          // Build tool call display content
+                          String toolCallContent = '';
+
+                          try {
+                            final toolCalls =
+                                jsonDecode(message.toolCallData!) as List;
+                            for (final toolCall in toolCalls) {
+                              final toolName = toolCall['function']['name'];
+                              final toolArgsStr =
+                                  toolCall['function']['arguments'];
+
+                              if (toolCallContent.isNotEmpty) {
+                                toolCallContent += '\n\n';
+                              }
+
+                              toolCallContent +=
+                                  '🔧 **Calling tool:** $toolName';
+
+                              // Add formatted arguments
+                              try {
+                                final Map<String, dynamic> toolArgs;
+                                if (toolArgsStr is String) {
+                                  toolArgs = Map<String, dynamic>.from(
+                                    const JsonCodec().decode(toolArgsStr),
+                                  );
+                                } else {
+                                  toolArgs = Map<String, dynamic>.from(
+                                    toolArgsStr,
+                                  );
+                                }
+
+                                if (toolArgs.isNotEmpty) {
+                                  final prettyArgs =
+                                      const JsonEncoder.withIndent(
+                                        '  ',
+                                      ).convert(toolArgs);
+                                  toolCallContent +=
+                                      '\n\nArguments:\n```json\n$prettyArgs\n```';
+                                }
+                              } catch (e) {
+                                toolCallContent +=
+                                    '\n\nArguments: (failed to parse)';
+                              }
+                            }
+                          } catch (e) {
+                            // Failed to parse tool calls
+                          }
+
+                          // Move original content to reasoning field (thinking bubble)
+                          // and show tool calls as the main content
+                          String displayReasoning = (message.reasoning ?? '').trim();
+                          final trimmedContent = message.content.trim();
+
+                          if (trimmedContent.isNotEmpty) {
+                            if (displayReasoning.isNotEmpty) {
+                              displayReasoning += '\n\n';
+                            }
+                            displayReasoning += trimmedContent;
+                          }
+
+                          final formattedMessage = Message(
+                            id: message.id,
+                            conversationId: message.conversationId,
+                            role: message.role,
+                            content: toolCallContent,
+                            timestamp: message.timestamp,
+                            reasoning: displayReasoning.isNotEmpty ? displayReasoning : null,
+                            toolCallData: message.toolCallData,
+                            toolCallId: message.toolCallId,
+                            toolName: message.toolName,
+                          );
+                          return MessageBubble(message: formattedMessage);
+                        } else if (message.role == MessageRole.assistant &&
+                            message.toolCallData != null &&
+                            !_showThinking) {
+                          // Hide thinking messages when thinking is disabled
+                          return const SizedBox.shrink();
+                        }
+
                         return MessageBubble(message: message);
                       },
                     );
@@ -806,7 +584,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Thinking...',
+                        _currentToolName != null
+                            ? 'Calling tool $_currentToolName...'
+                            : 'Thinking...',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],
                         ),
