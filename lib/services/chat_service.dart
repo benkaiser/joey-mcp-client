@@ -257,7 +257,13 @@ class ChatService {
           },
         };
       }).toList();
+      print('ChatService: Converted ${openRouterTools.length} tools for sampling request');
+      print('ChatService: Tools: ${jsonEncode(openRouterTools)}');
+    } else {
+      print('ChatService: No tools in sampling request (tools param is ${tools == null ? "null" : "empty"})');
     }
+
+    print('ChatService: Calling OpenRouter with ${apiMessages.length} messages, model: $model, tools: ${openRouterTools != null ? openRouterTools.length : 0}');
 
     // Call OpenRouter with tools if provided
     final response = await _openRouterService.chatCompletion(
@@ -272,9 +278,12 @@ class ChatService {
     final assistantMessage = choice['message'];
     final finishReason = choice['finish_reason'];
 
+    print('ChatService: OpenRouter response - finish_reason: $finishReason, has tool_calls: ${assistantMessage['tool_calls'] != null}');
+
     // Check if response contains tool calls
     final toolCalls = assistantMessage['tool_calls'] as List?;
     if (toolCalls != null && toolCalls.isNotEmpty) {
+      print('ChatService: Converting ${toolCalls.length} tool calls to MCP format');
       // Convert OpenRouter tool_calls to MCP tool_use format
       final mcpContent = toolCalls.map((toolCall) {
         final function = toolCall['function'];
@@ -289,9 +298,12 @@ class ChatService {
         };
       }).toList();
 
+      // If single tool_use, return as object; if multiple, return as array
+      final content = mcpContent.length == 1 ? mcpContent[0] : mcpContent;
+
       return {
         'role': 'assistant',
-        'content': mcpContent,
+        'content': content,
         'model': model,
         'stopReason': 'toolUse',
       };
