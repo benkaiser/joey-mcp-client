@@ -321,14 +321,14 @@ class MessageBubble extends StatelessWidget {
 
   void _copyToClipboard(BuildContext context, bool includeThinking) {
     String textToCopy = message.content;
-    
+
     // Include reasoning if present and thinking is visible
     if (includeThinking && message.reasoning != null && message.reasoning!.isNotEmpty) {
       textToCopy = 'Thinking:\n${message.reasoning!}\n\n$textToCopy';
     }
 
     Clipboard.setData(ClipboardData(text: textToCopy));
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Message copied to clipboard'),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -478,6 +479,8 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
+    controller.dispose();
+
     if (result != null && result.isNotEmpty && mounted) {
       // Get all messages in the conversation
       final allMessages = provider.getMessages(widget.conversation.id);
@@ -486,70 +489,16 @@ class _ChatScreenState extends State<ChatScreen> {
       final editIndex = allMessages.indexWhere((m) => m.id == message.id);
 
       if (editIndex >= 0) {
-        // Delete all messages after this one
-        for (int i = editIndex + 1; i < allMessages.length; i++) {
+        // Delete this message and all messages after it
+        for (int i = editIndex; i < allMessages.length; i++) {
           await provider.deleteMessage(allMessages[i].id);
         }
 
-        // Update the message content
-        await provider.updateMessage(message.id, result);
-
-        // Get fresh messages after deletion
-        final messages = provider.getMessages(widget.conversation.id);
-
-        // Trigger a new response from the assistant
-        if (!_isLoading) {
-          setState(() {
-            _isLoading = true;
-            _streamingContent = '';
-            _streamingReasoning = '';
-          });
-
-          try {
-            final openRouterService = context.read<OpenRouterService>();
-            _chatService = ChatService(
-              openRouterService: openRouterService,
-              mcpClients: _mcpClients,
-              mcpTools: _mcpTools,
-            );
-
-            final eventSubscription = _chatService!.events.listen((event) {
-              _handleChatEvent(event, provider);
-            });
-
-            await _chatService!.runAgenticLoop(
-              conversationId: widget.conversation.id,
-              model: widget.conversation.model,
-              messages: List.from(messages),
-              maxIterations: 10,
-            );
-
-            await eventSubscription.cancel();
-            _chatService?.dispose();
-            _chatService = null;
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: ${e.toString()}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          } finally {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _streamingContent = '';
-                _streamingReasoning = '';
-              });
-            }
-          }
-        }
+        // Set the edited text in the message controller and trigger normal send flow
+        _messageController.text = result;
+        await _sendMessage();
       }
     }
-
-    controller.dispose();
   }
 
   @override
