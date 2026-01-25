@@ -601,7 +601,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.edit),
-                onPressed: () => _showRenameDialog(),
+                onPressed: () => _showRenameDialog(conversation.title),
               ),
             ],
           ),
@@ -965,11 +965,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showRenameDialog() {
+  void _showRenameDialog(String currentTitle) {
     showDialog(
       context: context,
       builder: (dialogContext) => _RenameDialog(
-        initialTitle: widget.conversation.title,
+        initialTitle: currentTitle,
         onSave: (newTitle) async {
           await context.read<ConversationProvider>().updateConversationTitle(
             widget.conversation.id,
