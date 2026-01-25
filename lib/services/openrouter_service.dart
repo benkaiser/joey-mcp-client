@@ -204,6 +204,7 @@ class OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    CancelToken? cancelToken,
   }) async* {
     final apiKey = await getApiKey();
     if (apiKey == null) {
@@ -234,6 +235,7 @@ class OpenRouterService {
           },
           responseType: ResponseType.stream,
         ),
+        cancelToken: cancelToken,
       );
 
       if (response.statusCode == 200 && response.data != null) {
@@ -381,6 +383,12 @@ class OpenRouterService {
         throw Exception('Chat completion failed: ${response.statusCode}');
       }
     } on DioException catch (e) {
+      // Handle cancellation gracefully - don't throw an error
+      if (e.type == DioExceptionType.cancel) {
+        print('OpenRouter: Request cancelled by user');
+        return; // Exit the stream generator without error
+      }
+
       print('OpenRouter: chatCompletionStream DioException:');
       print('  Status: ${e.response?.statusCode}');
       print('  Response type: ${e.response?.data.runtimeType}');

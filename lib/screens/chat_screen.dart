@@ -140,6 +140,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _stopMessage() async {
+    if (_chatService != null && _isLoading) {
+      final provider = context.read<ConversationProvider>();
+      final messages = provider.getMessages(widget.conversation.id);
+
+      await _chatService!.cancelCurrentRequest(
+        conversationId: widget.conversation.id,
+        messages: List.from(messages),
+      );
+
+      setState(() {
+        _isLoading = false;
+        _streamingContent = '';
+        _streamingReasoning = '';
+        _currentToolName = null;
+        _isToolExecuting = false;
+      });
+    }
+  }
+
   Future<void> _sendMessage() async {
     try {
       final text = _messageController.text.trim();
@@ -882,19 +902,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 maxLines: null,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (val) {
-                  _sendMessage();
+                  if (!_isLoading) {
+                    _sendMessage();
+                  }
                   _focusNode.requestFocus();
                 },
               ),
             ),
             const SizedBox(width: 8),
             IconButton(
-              onPressed: _isLoading ? null : _sendMessage,
-              icon: const Icon(Icons.send),
+              onPressed: _isLoading ? _stopMessage : _sendMessage,
+              icon: Icon(_isLoading ? Icons.stop : Icons.send),
               style: IconButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: _isLoading
+                    ? Colors.red
+                    : Theme.of(context).colorScheme.primary,
                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                disabledBackgroundColor: Colors.grey[300],
               ),
             ),
           ],

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import 'openrouter_service.dart';
@@ -31,8 +32,54 @@ class ChatService {
   /// Stream of chat events
   Stream<ChatEvent> get events => _eventController.stream;
 
+  /// Cancel token for aborting the current request
+  CancelToken? _cancelToken;
+
+  /// Flag to track if the current request was cancelled
+  bool _wasCancelled = false;
+
+  /// Current partial state when cancelled
+  String _partialContent = '';
+  String _partialReasoning = '';
+  List<dynamic>? _partialToolCalls;
+
   void dispose() {
+    _cancelToken?.cancel();
     _eventController.close();
+  }
+
+  /// Cancel the current ongoing request and persist partial state
+  Future<void> cancelCurrentRequest({
+    required String conversationId,
+    required List<Message> messages,
+  }) async {
+    if (_cancelToken != null && !_cancelToken!.isCancelled) {
+      _wasCancelled = true;
+      _cancelToken!.cancel('User cancelled');
+
+      // Persist partial content if any exists
+      if (_partialContent.isNotEmpty || _partialReasoning.isNotEmpty) {
+        final partialMessage = Message(
+          id: const Uuid().v4(),
+          conversationId: conversationId,
+          role: MessageRole.assistant,
+          content: _partialContent,
+          timestamp: DateTime.now(),
+          reasoning: _partialReasoning.isNotEmpty ? _partialReasoning : null,
+        );
+
+        _eventController.add(MessageCreated(message: partialMessage));
+        messages.add(partialMessage);
+      }
+
+      // Clear partial state
+      _partialContent = '';
+      _partialReasoning = '';
+      _partialToolCalls = null;
+
+      // Emit conversation complete event
+      _eventController.add(ConversationComplete());
+    }
   }
 
   /// Handle sampling request from an MCP server
@@ -159,6 +206,15 @@ class ChatService {
     // Get system prompt
     final systemPrompt = await DefaultModelService.getSystemPrompt();
 
+    // Create a new cancel token for this request
+    _cancelToken = CancelToken();
+
+    // Reset partial state and cancellation flag
+    _partialContent = '';
+    _partialReasoning = '';
+    _partialToolCalls = null;
+    _wasCancelled = false;
+
     while (iterationCount < maxIterations) {
       iterationCount++;
 
@@ -191,6 +247,7 @@ class ChatService {
           model: model,
           messages: apiMessages,
           tools: allTools.isNotEmpty ? allTools : null,
+          cancelToken: _cancelToken,
         )) {
           // Check if this chunk contains tool call information
           if (chunk.startsWith('TOOL_CALLS:')) {
@@ -205,11 +262,22 @@ class ChatService {
             }
           } else if (chunk.startsWith('REASONING:')) {
             streamedReasoning += chunk.substring('REASONING:'.length);
+            _partialReasoning = streamedReasoning;
             _eventController.add(ReasoningChunk(content: streamedReasoning));
           } else {
             streamedContent += chunk;
+            _partialContent = streamedContent;
             _eventController.add(ContentChunk(content: streamedContent));
           }
+        }
+      } on DioException catch (e) {
+        if (e.type == DioExceptionType.cancel) {
+          // Request was cancelled - this is expected, don't emit error
+          print('ChatService: Request cancelled by user');
+          return;
+        } else {
+          _eventController.add(ErrorOccurred(error: e.toString()));
+          rethrow;
         }
       } on OpenRouterAuthException {
         _eventController.add(AuthenticationRequired());
@@ -222,6 +290,12 @@ class ChatService {
       print(
         'ChatService: Stream complete. Content: ${streamedContent.length} chars, Tool calls: ${detectedToolCalls?.length ?? 0}',
       );
+
+      // If request was cancelled, don't process the response (partial message already created)
+      if (_wasCancelled) {
+        print('ChatService: Request was cancelled, skipping message creation');
+        return;
+      }
 
       if (detectedToolCalls != null && detectedToolCalls.isNotEmpty) {
         print(
