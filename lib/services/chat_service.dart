@@ -230,7 +230,7 @@ class ChatService {
     }
 
     // Select model based on preferences or use default
-    String model = preferredModel ?? 'anthropic/claude-3-5-sonnet';
+    String model = preferredModel ?? 'deepseek/deepseek-v3.2';
 
     if (modelPreferences != null) {
       final hints = modelPreferences['hints'] as List?;
@@ -298,12 +298,10 @@ class ChatService {
         };
       }).toList();
 
-      // If single tool_use, return as object; if multiple, return as array
-      final content = mcpContent.length == 1 ? mcpContent[0] : mcpContent;
-
+      // Tool use content is ALWAYS an array (even for single tool)
       return {
         'role': 'assistant',
-        'content': content,
+        'content': mcpContent,
         'model': model,
         'stopReason': 'toolUse',
       };

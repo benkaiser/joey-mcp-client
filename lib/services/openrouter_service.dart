@@ -157,6 +157,8 @@ class OpenRouterService {
         requestData['max_tokens'] = maxTokens;
       }
 
+      print('OpenRouter: Full request body: ${jsonEncode(requestData)}');
+
       final response = await _dio.post(
         'https://openrouter.ai/api/v1/chat/completions',
         data: requestData,

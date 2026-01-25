@@ -813,7 +813,7 @@ void main() {
       expect(response['stopReason'], equals('endTurn'));
     });
 
-    test('should handle single tool_use as object, not array', () async {
+    test('should handle single tool_use as array', () async {
       // Arrange: Mock OpenRouter response with single tool_call
       final mockOpenRouterResponse = {
         'choices': [
@@ -865,13 +865,15 @@ void main() {
         preferredModel: 'anthropic/claude-3-5-sonnet',
       );
 
-      // Assert: Single tool_use should be an object, not array
+      // Assert: Even single tool_use should be an array
       expect(response['role'], equals('assistant'));
-      expect(response['content'], isA<Map>()); // Should be object, not List
-      expect(response['content']['type'], equals('tool_use'));
-      expect(response['content']['id'], equals('call_single'));
-      expect(response['content']['name'], equals('get_weather'));
-      expect(response['content']['input'], equals({'city': 'Tokyo'}));
+      expect(response['content'], isA<List>()); // Should be array
+      final content = response['content'] as List;
+      expect(content.length, equals(1));
+      expect(content[0]['type'], equals('tool_use'));
+      expect(content[0]['id'], equals('call_single'));
+      expect(content[0]['name'], equals('get_weather'));
+      expect(content[0]['input'], equals({'city': 'Tokyo'}));
       expect(response['stopReason'], equals('toolUse'));
     });
   });
