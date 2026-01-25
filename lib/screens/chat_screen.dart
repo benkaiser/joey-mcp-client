@@ -337,6 +337,147 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _deleteMessage(String messageId, ConversationProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text(
+          'Are you sure you want to delete this message? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await provider.deleteMessage(messageId);
+    }
+  }
+
+  Future<void> _editMessage(Message message, ConversationProvider provider) async {
+    final controller = TextEditingController(text: message.content);
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Message'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Edit your message below. All messages after this one will be removed, and the conversation will continue from this point.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Type your message...',
+              ),
+              maxLines: null,
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Edit and Resend'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      // Get all messages in the conversation
+      final allMessages = provider.getMessages(widget.conversation.id);
+      
+      // Find the index of the message being edited
+      final editIndex = allMessages.indexWhere((m) => m.id == message.id);
+      
+      if (editIndex >= 0) {
+        // Delete all messages after this one
+        for (int i = editIndex + 1; i < allMessages.length; i++) {
+          await provider.deleteMessage(allMessages[i].id);
+        }
+        
+        // Update the message content
+        await provider.updateMessage(message.id, result);
+        
+        // Get fresh messages after deletion
+        final messages = provider.getMessages(widget.conversation.id);
+        
+        // Trigger a new response from the assistant
+        if (!_isLoading) {
+          setState(() {
+            _isLoading = true;
+            _streamingContent = '';
+            _streamingReasoning = '';
+          });
+
+          try {
+            final openRouterService = context.read<OpenRouterService>();
+            _chatService = ChatService(
+              openRouterService: openRouterService,
+              mcpClients: _mcpClients,
+              mcpTools: _mcpTools,
+            );
+
+            final eventSubscription = _chatService!.events.listen((event) {
+              _handleChatEvent(event, provider);
+            });
+
+            await _chatService!.runAgenticLoop(
+              conversationId: widget.conversation.id,
+              model: widget.conversation.model,
+              messages: List.from(messages),
+              maxIterations: 10,
+            );
+
+            await eventSubscription.cancel();
+            _chatService?.dispose();
+            _chatService = null;
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error: ${e.toString()}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+                _streamingContent = '';
+                _streamingReasoning = '';
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    controller.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ConversationProvider>(
@@ -515,6 +656,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             message: streamingMessage,
                             isStreaming: true,
                             showThinking: _showThinking,
+                            onDelete: null, // Can't delete while streaming
+                            onEdit: null,
                           );
                         }
 
@@ -529,6 +672,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: formattedMessage,
                             showThinking: _showThinking,
+                            onDelete: () => _deleteMessage(formattedMessage.id, provider),
+                            onEdit: null, // Tool messages can't be edited
                           );
                         }
 
@@ -613,6 +758,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: formattedMessage,
                             showThinking: _showThinking,
+                            onDelete: () => _deleteMessage(formattedMessage.id, provider),
+                            onEdit: null, // Tool call messages can't be edited
                           );
                         } else if (message.role == MessageRole.assistant &&
                             message.toolCallData != null &&
@@ -624,6 +771,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         return MessageBubble(
                           message: message,
                           showThinking: _showThinking,
+                          onDelete: () => _deleteMessage(message.id, provider),
+                          onEdit: message.role == MessageRole.user
+                              ? () => _editMessage(message, provider)
+                              : null,
                         );
                       },
                     );

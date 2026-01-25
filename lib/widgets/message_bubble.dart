@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../models/message.dart';
@@ -7,12 +8,16 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final bool isStreaming;
   final bool showThinking;
+  final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.isStreaming = false,
     this.showThinking = true,
+    this.onDelete,
+    this.onEdit,
   });
 
   @override
@@ -120,8 +125,10 @@ class MessageBubble extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: MarkdownBody(
+                                      child: Markdown(
                                         data: message.reasoning!,
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
                                         selectable: true,
                                         styleSheet: MarkdownStyleSheet(
                                           p: TextStyle(
@@ -150,8 +157,10 @@ class MessageBubble extends StatelessWidget {
                                 ),
                               )
                             else if (message.content.isNotEmpty)
-                              MarkdownBody(
+                              Markdown(
                                 data: message.content,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
                                 selectable: true,
                                 styleSheet: MarkdownStyleSheet(
                                   p: TextStyle(
@@ -230,12 +239,39 @@ class MessageBubble extends StatelessWidget {
                 const SizedBox(height: 4),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    timeFormat.format(message.timestamp),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                      fontSize: 11,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        timeFormat.format(message.timestamp),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Action buttons
+                      _buildActionButton(
+                        context: context,
+                        icon: Icons.copy,
+                        tooltip: 'Copy',
+                        onPressed: () => _copyToClipboard(context),
+                      ),
+                      if (onDelete != null)
+                        _buildActionButton(
+                          context: context,
+                          icon: Icons.delete_outline,
+                          tooltip: 'Delete',
+                          onPressed: onDelete,
+                        ),
+                      if (isUser && onEdit != null)
+                        _buildActionButton(
+                          context: context,
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Edit',
+                          onPressed: onEdit,
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -254,6 +290,47 @@ class MessageBubble extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required BuildContext context,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            icon,
+            size: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _copyToClipboard(BuildContext context) {
+    String textToCopy = message.content;
+    
+    // Include reasoning if present
+    if (message.reasoning != null && message.reasoning!.isNotEmpty) {
+      textToCopy = 'Thinking:\n${message.reasoning!}\n\n$textToCopy';
+    }
+
+    Clipboard.setData(ClipboardData(text: textToCopy));
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Message copied to clipboard'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
