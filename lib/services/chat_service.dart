@@ -117,6 +117,8 @@ class ChatService {
     final maxTokens = params['maxTokens'] as int?;
     final modelPreferences =
         params['modelPreferences'] as Map<String, dynamic>?;
+    final tools = params['tools'] as List?;
+    final toolChoice = params['toolChoice'] as Map<String, dynamic>?;
 
     // Convert MCP messages to OpenRouter format
     final apiMessages = <Map<String, dynamic>>[];
@@ -129,17 +131,102 @@ class ChatService {
       final role = message['role'] as String;
       final content = message['content'];
 
-      String contentText;
-      if (content is Map && content['type'] == 'text') {
-        contentText = content['text'] as String;
-      } else if (content is String) {
-        contentText = content;
-      } else {
-        // For now, skip non-text content types (image, audio)
-        continue;
-      }
+      // Handle different content types
+      if (content is List) {
+        // Array of content blocks (tool_use, tool_result, or mixed)
+        final convertedContent = <Map<String, dynamic>>[];
+        bool hasToolResults = false;
+        bool hasToolUse = false;
 
-      apiMessages.add({'role': role, 'content': contentText});
+        for (final block in content) {
+          if (block is! Map<String, dynamic>) continue;
+          
+          final type = block['type'] as String?;
+          
+          if (type == 'text') {
+            convertedContent.add({
+              'type': 'text',
+              'text': block['text'],
+            });
+          } else if (type == 'tool_use') {
+            hasToolUse = true;
+            // For OpenRouter, we need to convert to tool_calls format
+            // This will be handled differently - we'll create a tool_calls array
+          } else if (type == 'tool_result') {
+            hasToolResults = true;
+            // Convert MCP tool_result to OpenRouter format
+            final toolResultContent = block['content'] as List;
+            final textContent = toolResultContent
+                .where((c) => c['type'] == 'text')
+                .map((c) => c['text'])
+                .join('\n');
+            
+            convertedContent.add({
+              'type': 'tool_result',
+              'tool_use_id': block['toolUseId'],
+              'content': textContent,
+            });
+          }
+        }
+
+        // For assistant messages with tool_use, we need to format as tool_calls
+        if (role == 'assistant' && hasToolUse) {
+          final toolCalls = <Map<String, dynamic>>[];
+          for (final block in content) {
+            if (block is Map<String, dynamic> && block['type'] == 'tool_use') {
+              toolCalls.add({
+                'id': block['id'],
+                'type': 'function',
+                'function': {
+                  'name': block['name'],
+                  'arguments': jsonEncode(block['input']),
+                },
+              });
+            }
+          }
+          apiMessages.add({
+            'role': 'assistant',
+            'tool_calls': toolCalls,
+          });
+        } else if (role == 'user' && hasToolResults) {
+          // For OpenRouter, tool results go in user messages
+          // We need to convert to the format OpenRouter expects
+          for (final block in content) {
+            if (block is Map<String, dynamic> && block['type'] == 'tool_result') {
+              final toolResultContent = block['content'] as List;
+              final textContent = toolResultContent
+                  .where((c) => c['type'] == 'text')
+                  .map((c) => c['text'])
+                  .join('\n');
+              
+              apiMessages.add({
+                'role': 'tool',
+                'tool_call_id': block['toolUseId'],
+                'content': textContent,
+              });
+            }
+          }
+        } else {
+          // Regular content array (e.g., just text blocks)
+          final textContent = convertedContent
+              .where((c) => c['type'] == 'text')
+              .map((c) => c['text'])
+              .join('\n');
+          if (textContent.isNotEmpty) {
+            apiMessages.add({'role': role, 'content': textContent});
+          }
+        }
+      } else if (content is Map) {
+        // Single content block
+        final type = content['type'] as String?;
+        if (type == 'text') {
+          apiMessages.add({'role': role, 'content': content['text']});
+        }
+        // Skip image, audio, etc. for now
+      } else if (content is String) {
+        // Plain string content
+        apiMessages.add({'role': role, 'content': content});
+      }
     }
 
     // Select model based on preferences or use default
@@ -148,12 +235,8 @@ class ChatService {
     if (modelPreferences != null) {
       final hints = modelPreferences['hints'] as List?;
       if (hints != null && hints.isNotEmpty) {
-        // Try to match a hint to an available model
-        // For now, just use the first hint as a substring match
         final firstHint = hints.first['name'] as String?;
         if (firstHint != null) {
-          // You could implement more sophisticated model selection here
-          // For now, we'll use the hint if it looks like a full model ID
           if (firstHint.contains('/')) {
             model = firstHint;
           }
@@ -161,10 +244,26 @@ class ChatService {
       }
     }
 
-    // Call OpenRouter
+    // Convert MCP tools to OpenRouter format if provided
+    List<Map<String, dynamic>>? openRouterTools;
+    if (tools != null && tools.isNotEmpty) {
+      openRouterTools = tools.map((tool) {
+        return {
+          'type': 'function',
+          'function': {
+            'name': tool['name'],
+            'description': tool['description'] ?? '',
+            'parameters': tool['inputSchema'] ?? {},
+          },
+        };
+      }).toList();
+    }
+
+    // Call OpenRouter with tools if provided
     final response = await _openRouterService.chatCompletion(
       model: model,
       messages: apiMessages,
+      tools: openRouterTools,
       maxTokens: maxTokens,
     );
 
@@ -173,6 +272,32 @@ class ChatService {
     final assistantMessage = choice['message'];
     final finishReason = choice['finish_reason'];
 
+    // Check if response contains tool calls
+    final toolCalls = assistantMessage['tool_calls'] as List?;
+    if (toolCalls != null && toolCalls.isNotEmpty) {
+      // Convert OpenRouter tool_calls to MCP tool_use format
+      final mcpContent = toolCalls.map((toolCall) {
+        final function = toolCall['function'];
+        final argumentsStr = function['arguments'] as String;
+        final arguments = jsonDecode(argumentsStr);
+        
+        return {
+          'type': 'tool_use',
+          'id': toolCall['id'],
+          'name': function['name'],
+          'input': arguments,
+        };
+      }).toList();
+
+      return {
+        'role': 'assistant',
+        'content': mcpContent,
+        'model': model,
+        'stopReason': 'toolUse',
+      };
+    }
+
+    // Regular text response
     return {
       'role': 'assistant',
       'content': {'type': 'text', 'text': assistantMessage['content']},
@@ -188,7 +313,7 @@ class ChatService {
       case 'length':
         return 'maxTokens';
       case 'tool_calls':
-        return 'stopSequence';
+        return 'toolUse';
       default:
         return 'endTurn';
     }

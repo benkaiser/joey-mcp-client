@@ -1,6 +1,6 @@
 # Sampling Request Unit Test
 
-This test suite validates the MCP sampling request flow in Joey MCP Client Flutter.
+This test suite validates the MCP sampling request flow in Joey MCP Client Flutter, including support for multi-turn tool use loops as specified in the MCP protocol.
 
 ## Test Coverage
 
@@ -21,7 +21,7 @@ The test suite (`test/sampling_request_test.dart`) comprehensively tests the sam
 6. **Finish Reason Conversion** - Verifies correct mapping between OpenRouter finish reasons and MCP stop reasons:
    - `stop` → `endTurn`
    - `length` → `maxTokens`
-   - `tool_calls` → `stopSequence`
+   - `tool_calls` → `toolUse`
    - Unknown/null → `endTurn`
 
 7. **Request Rejection** - Tests that rejected sampling requests throw appropriate exceptions.
@@ -32,13 +32,17 @@ The test suite (`test/sampling_request_test.dart`) comprehensively tests the sam
 
 10. **Optional Max Tokens** - Ensures `maxTokens` is omitted when not specified.
 
+11. **Tool Use - Initial Request** - Tests that sampling requests with tools return tool_use responses from the LLM with proper MCP formatting.
+
+12. **Tool Use - Follow-up with Results** - Tests that follow-up requests with tool results are processed correctly and return final text responses.
+
 ## Running the Tests
 
 ```bash
 flutter test test/sampling_request_test.dart
 ```
 
-All 10 tests should pass, validating the complete sampling request flow.
+All 12 tests should pass, validating the complete sampling request flow including multi-turn tool loops.
 
 ## Dependencies
 
