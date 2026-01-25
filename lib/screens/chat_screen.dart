@@ -39,6 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   ChatService? _chatService;
   String? _currentToolName;
   bool _isToolExecuting = false; // true = calling, false = called
+  bool _authenticationRequired = false;
 
   @override
   void initState() {
@@ -163,6 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _isLoading = true;
         _streamingContent = '';
+        _authenticationRequired = false; // Reset auth flag on new message
       });
 
       try {
@@ -291,6 +293,17 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } else if (event is SamplingRequestReceived) {
       _showSamplingRequestDialog(event);
+    } else if (event is AuthenticationRequired) {
+      // Handle auth error by showing a message in the chat
+      // The error will be displayed as a special card in the message list
+      setState(() {
+        _isLoading = false;
+        _streamingContent = '';
+        _streamingReasoning = '';
+        _currentToolName = null;
+        _isToolExecuting = false;
+        _authenticationRequired = true;
+      });
     } else if (event is ErrorOccurred) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -337,6 +350,67 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildAuthRequiredCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Card(
+        color: Colors.orange.shade50,
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.orange.shade300, width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Authentication Required',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your OpenRouter session has expired. Please sign in again to continue chatting.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    // Navigate to auth screen (replaces current screen)
+                    Navigator.pushReplacementNamed(context, '/auth');
+                  },
+                  icon: const Icon(Icons.login),
+                  label: const Text('Sign In with OpenRouter'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteMessage(String messageId, ConversationProvider provider) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -366,7 +440,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _editMessage(Message message, ConversationProvider provider) async {
     final controller = TextEditingController(text: message.content);
-    
+
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -407,22 +481,22 @@ class _ChatScreenState extends State<ChatScreen> {
     if (result != null && result.isNotEmpty && mounted) {
       // Get all messages in the conversation
       final allMessages = provider.getMessages(widget.conversation.id);
-      
+
       // Find the index of the message being edited
       final editIndex = allMessages.indexWhere((m) => m.id == message.id);
-      
+
       if (editIndex >= 0) {
         // Delete all messages after this one
         for (int i = editIndex + 1; i < allMessages.length; i++) {
           await provider.deleteMessage(allMessages[i].id);
         }
-        
+
         // Update the message content
         await provider.updateMessage(message.id, result);
-        
+
         // Get fresh messages after deletion
         final messages = provider.getMessages(widget.conversation.id);
-        
+
         // Trigger a new response from the assistant
         if (!_isLoading) {
           setState(() {
@@ -474,7 +548,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     }
-    
+
     controller.dispose();
   }
 
@@ -636,8 +710,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           ((_streamingContent.isNotEmpty ||
                                   _streamingReasoning.isNotEmpty)
                               ? 1
-                              : 0),
+                              : 0) +
+                          (_authenticationRequired ? 1 : 0),
                       itemBuilder: (context, index) {
+                        // Show auth required card at the end
+                        if (_authenticationRequired &&
+                            index ==
+                                displayMessages.length +
+                                    ((_streamingContent.isNotEmpty ||
+                                            _streamingReasoning.isNotEmpty)
+                                        ? 1
+                                        : 0)) {
+                          return _buildAuthRequiredCard();
+                        }
+
                         // Show streaming content as last item
                         if ((_streamingContent.isNotEmpty ||
                                 _streamingReasoning.isNotEmpty) &&

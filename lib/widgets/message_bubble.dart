@@ -92,9 +92,10 @@ class MessageBubble extends StatelessWidget {
                             ),
                           ],
                         )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                      : SelectionArea(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             // Show reasoning first if present (for assistant messages)
                             if (!isUser &&
                                 showThinking &&
@@ -235,6 +236,7 @@ class MessageBubble extends StatelessWidget {
                             ],
                           ],
                         ),
+                      ),
                 ),
                 const SizedBox(height: 4),
                 Padding(
@@ -255,7 +257,7 @@ class MessageBubble extends StatelessWidget {
                         context: context,
                         icon: Icons.copy,
                         tooltip: 'Copy',
-                        onPressed: () => _copyToClipboard(context),
+                        onPressed: () => _copyToClipboard(context, showThinking),
                       ),
                       if (onDelete != null)
                         _buildActionButton(
@@ -317,11 +319,11 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  void _copyToClipboard(BuildContext context) {
+  void _copyToClipboard(BuildContext context, bool includeThinking) {
     String textToCopy = message.content;
     
-    // Include reasoning if present
-    if (message.reasoning != null && message.reasoning!.isNotEmpty) {
+    // Include reasoning if present and thinking is visible
+    if (includeThinking && message.reasoning != null && message.reasoning!.isNotEmpty) {
       textToCopy = 'Thinking:\n${message.reasoning!}\n\n$textToCopy';
     }
 

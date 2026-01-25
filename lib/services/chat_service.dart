@@ -211,6 +211,9 @@ class ChatService {
             _eventController.add(ContentChunk(content: streamedContent));
           }
         }
+      } on OpenRouterAuthException {
+        _eventController.add(AuthenticationRequired());
+        rethrow;
       } catch (e) {
         _eventController.add(ErrorOccurred(error: e.toString()));
         rethrow;
@@ -430,6 +433,9 @@ class ErrorOccurred extends ChatEvent {
   final String error;
   ErrorOccurred({required this.error});
 }
+
+/// Event emitted when authentication with OpenRouter is required
+class AuthenticationRequired extends ChatEvent {}
 
 /// Event emitted when a sampling request is received from an MCP server
 class SamplingRequestReceived extends ChatEvent {
