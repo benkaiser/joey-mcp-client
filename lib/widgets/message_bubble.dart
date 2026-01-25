@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:intl/intl.dart';
 import '../models/message.dart';
+import '../utils/date_formatter.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -23,7 +23,6 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
-    final timeFormat = DateFormat('h:mm a');
     final isLoading =
         !isUser &&
         message.content.isEmpty &&
@@ -245,7 +244,7 @@ class MessageBubble extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        timeFormat.format(message.timestamp),
+                        DateFormatter.formatMessageTimestamp(message.timestamp),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],
                           fontSize: 11,

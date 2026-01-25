@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../providers/conversation_provider.dart';
 import '../models/conversation.dart';
 import '../services/default_model_service.dart';
 import '../services/database_service.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
+import '../utils/date_formatter.dart';
 import 'chat_screen.dart';
 import 'model_picker_screen.dart';
 import 'settings_screen.dart';
@@ -197,14 +197,6 @@ class _ConversationListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('MMM d, yyyy');
-    final timeFormat = DateFormat('h:mm a');
-    final now = DateTime.now();
-    final isToday =
-        conversation.updatedAt.year == now.year &&
-        conversation.updatedAt.month == now.month &&
-        conversation.updatedAt.day == now.day;
-
     return ListTile(
       leading: CircleAvatar(child: Icon(Icons.chat, size: 20)),
       title: Text(
@@ -225,9 +217,7 @@ class _ConversationListItem extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            isToday
-                ? timeFormat.format(conversation.updatedAt)
-                : dateFormat.format(conversation.updatedAt),
+            DateFormatter.formatConversationDate(conversation.updatedAt),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
