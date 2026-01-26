@@ -88,6 +88,7 @@ class MockOpenRouterService extends _i1.Mock implements _i2.OpenRouterService {
     required String? model,
     required List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
+    dynamic toolChoice,
     bool? stream = false,
     int? maxTokens,
   }) =>
@@ -96,6 +97,7 @@ class MockOpenRouterService extends _i1.Mock implements _i2.OpenRouterService {
               #model: model,
               #messages: messages,
               #tools: tools,
+              #toolChoice: toolChoice,
               #stream: stream,
               #maxTokens: maxTokens,
             }),

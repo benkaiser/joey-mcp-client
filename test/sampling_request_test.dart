@@ -605,7 +605,9 @@ void main() {
       ));
     });
 
-    test('should handle sampling with tools - initial request returns tool_use', () async {
+    test(
+      'should handle sampling with tools - loop through tool calls',
+      () async {
       // Arrange: Mock OpenRouter response with tool_calls
       final mockOpenRouterResponse = {
         'choices': [
@@ -635,12 +637,33 @@ void main() {
         ],
       };
 
+        // Final response after tool execution
+        final mockFinalResponse = {
+          'choices': [
+            {
+              'message': {'content': 'The weather is nice in both cities.'},
+              'finish_reason': 'stop',
+            },
+          ],
+        };
+
       when(mockOpenRouterService.chatCompletion(
         model: anyNamed('model'),
         messages: anyNamed('messages'),
         tools: anyNamed('tools'),
         maxTokens: anyNamed('maxTokens'),
-      )).thenAnswer((_) async => mockOpenRouterResponse);
+            toolChoice: anyNamed('toolChoice'),
+          ),
+        ).thenAnswer((invocation) async {
+          final messages =
+              invocation.namedArguments[const Symbol('messages')] as List;
+          // First call has initial messages, second call has tool results added
+          if (messages.length <= 2) {
+            return mockOpenRouterResponse;
+          } else {
+            return mockFinalResponse;
+          }
+        });
 
       final samplingRequest = {
         'params': {
@@ -676,152 +699,37 @@ void main() {
         preferredModel: 'anthropic/claude-3-5-sonnet',
       );
 
-      // Assert: Verify OpenRouter was called with tools
+        // Assert: Verify OpenRouter was called multiple times
       verify(mockOpenRouterService.chatCompletion(
         model: 'anthropic/claude-3-5-sonnet',
         messages: anyNamed('messages'),
-        tools: argThat(
-          isA<List>().having((t) => t.length, 'length', 1),
-          named: 'tools',
-        ),
+            tools: anyNamed('tools'),
         maxTokens: 1000,
-      )).called(1);
+            toolChoice: anyNamed('toolChoice'),
+          ),
+        ).called(2);
 
-      // Assert: Response should contain tool_use content in MCP format
+        // Assert: Response should contain final text
       expect(response['role'], equals('assistant'));
-      expect(response['content'], isA<List>());
-      final content = response['content'] as List;
-      expect(content.length, equals(2));
-      
-      // First tool use
-      expect(content[0]['type'], equals('tool_use'));
-      expect(content[0]['id'], equals('call_abc123'));
-      expect(content[0]['name'], equals('get_weather'));
-      expect(content[0]['input'], equals({'city': 'Paris'}));
-      
-      // Second tool use
-      expect(content[1]['type'], equals('tool_use'));
-      expect(content[1]['id'], equals('call_def456'));
-      expect(content[1]['name'], equals('get_weather'));
-      expect(content[1]['input'], equals({'city': 'London'}));
-      
-      // Stop reason should be toolUse
-      expect(response['stopReason'], equals('toolUse'));
+        expect(response['content']['type'], equals('text'));
+        expect(
+          response['content']['text'],
+          equals('The weather is nice in both cities.'),
+        );
+
+        // Stop reason should be endTurn
+        expect(response['stopReason'], equals('endTurn'));
     });
 
-    test('should handle sampling with tools - follow-up with tool results', () async {
-      // Arrange: Mock OpenRouter response with final text
-      final mockOpenRouterResponse = {
-        'choices': [
-          {
-            'message': {
-              'content': 'Based on the current weather data:\n\n- **Paris**: 18°C and partly cloudy\n- **London**: 15°C and rainy',
-            },
-            'finish_reason': 'stop',
-          },
-        ],
-      };
-
-      when(mockOpenRouterService.chatCompletion(
-        model: anyNamed('model'),
-        messages: anyNamed('messages'),
-        tools: anyNamed('tools'),
-        maxTokens: anyNamed('maxTokens'),
-      )).thenAnswer((_) async => mockOpenRouterResponse);
-
-      final samplingRequest = {
-        'params': {
-          'messages': [
-            {
-              'role': 'user',
-              'content': {
-                'type': 'text',
-                'text': "What's the weather like in Paris and London?",
-              },
-            },
-            {
-              'role': 'assistant',
-              'content': [
-                {
-                  'type': 'tool_use',
-                  'id': 'call_abc123',
-                  'name': 'get_weather',
-                  'input': {'city': 'Paris'},
-                },
-                {
-                  'type': 'tool_use',
-                  'id': 'call_def456',
-                  'name': 'get_weather',
-                  'input': {'city': 'London'},
-                },
-              ],
-            },
-            {
-              'role': 'user',
-              'content': [
-                {
-                  'type': 'tool_result',
-                  'toolUseId': 'call_abc123',
-                  'content': [
-                    {
-                      'type': 'text',
-                      'text': 'Weather in Paris: 18°C, partly cloudy',
-                    },
-                  ],
-                },
-                {
-                  'type': 'tool_result',
-                  'toolUseId': 'call_def456',
-                  'content': [
-                    {
-                      'type': 'text',
-                      'text': 'Weather in London: 15°C, rainy',
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-          'tools': [
-            {
-              'name': 'get_weather',
-              'description': 'Get current weather for a city',
-              'inputSchema': {
-                'type': 'object',
-                'properties': {
-                  'city': {'type': 'string'},
-                },
-                'required': ['city'],
-              },
-            },
-          ],
-          'maxTokens': 1000,
-        },
-      };
-
-      // Act
-      final response = await chatService.processSamplingRequest(
-        request: samplingRequest,
-        preferredModel: 'anthropic/claude-3-5-sonnet',
-      );
-
-      // Assert: Response should contain final text
-      expect(response['role'], equals('assistant'));
-      expect(response['content']['type'], equals('text'));
-      expect(response['content']['text'], contains('Paris'));
-      expect(response['content']['text'], contains('London'));
-      expect(response['stopReason'], equals('endTurn'));
-    });
-
-    test('should handle single tool_use as array', () async {
-      // Arrange: Mock OpenRouter response with single tool_call
+    test('should return tool_use after max iterations', () async {
+      // Arrange: Mock OpenRouter response with tool_calls ALWAYS
       final mockOpenRouterResponse = {
         'choices': [
           {
             'message': {
               'tool_calls': [
                 {
-                  'id': 'call_single',
+                  'id': 'call_infinite',
                   'type': 'function',
                   'function': {
                     'name': 'get_weather',
@@ -839,6 +747,8 @@ void main() {
         model: anyNamed('model'),
         messages: anyNamed('messages'),
         tools: anyNamed('tools'),
+          toolChoice: anyNamed('toolChoice'),
+        maxTokens: anyNamed('maxTokens'),
       )).thenAnswer((_) async => mockOpenRouterResponse);
 
       final samplingRequest = {
@@ -862,19 +772,100 @@ void main() {
       // Act
       final response = await chatService.processSamplingRequest(
         request: samplingRequest,
-        preferredModel: 'anthropic/claude-3-5-sonnet',
       );
 
-      // Assert: Even single tool_use should be an array
+      // Assert: Should return tool_use after 10 iterations
       expect(response['role'], equals('assistant'));
-      expect(response['content'], isA<List>()); // Should be array
-      final content = response['content'] as List;
-      expect(content.length, equals(1));
-      expect(content[0]['type'], equals('tool_use'));
-      expect(content[0]['id'], equals('call_single'));
-      expect(content[0]['name'], equals('get_weather'));
-      expect(content[0]['input'], equals({'city': 'Tokyo'}));
+      expect(response['content'], isA<List>());
       expect(response['stopReason'], equals('toolUse'));
+
+      verify(
+        mockOpenRouterService.chatCompletion(
+          model: anyNamed('model'),
+          messages: anyNamed('messages'),
+          tools: anyNamed('tools'),
+          toolChoice: anyNamed('toolChoice'),
+          maxTokens: anyNamed('maxTokens'),
+        ),
+      ).called(10);
+    });
+
+    test(
+      'should handle single tool_use as array when loop completes',
+      () async {
+        // Arrange: Mock OpenRouter response with single tool_call then text
+      final mockOpenRouterResponse = {
+        'choices': [
+          {
+            'message': {
+              'tool_calls': [
+                {
+                  'id': 'call_single',
+                  'type': 'function',
+                  'function': {
+                    'name': 'get_weather',
+                    'arguments': '{"city": "Tokyo"}',
+                  },
+                },
+              ],
+            },
+            'finish_reason': 'tool_calls',
+          },
+        ],
+      };
+
+        final mockFinalResponse = {
+          'choices': [
+            {
+              'message': {'content': 'It is nice in Tokyo.'},
+              'finish_reason': 'stop',
+            },
+          ],
+        };
+
+      when(mockOpenRouterService.chatCompletion(
+        model: anyNamed('model'),
+        messages: anyNamed('messages'),
+        tools: anyNamed('tools'),
+            toolChoice: anyNamed('toolChoice'),
+            maxTokens: anyNamed('maxTokens'),
+          ),
+        ).thenAnswer((invocation) async {
+          final messages =
+              invocation.namedArguments[const Symbol('messages')] as List;
+          if (messages.length <= 1) {
+            return mockOpenRouterResponse;
+          } else {
+            return mockFinalResponse;
+          }
+        });
+
+      final samplingRequest = {
+        'params': {
+          'messages': [
+            {
+              'role': 'user',
+              'content': {'type': 'text', 'text': 'What is the weather?'},
+            },
+          ],
+          'tools': [
+            {
+              'name': 'get_weather',
+              'description': 'Get weather',
+              'inputSchema': {'type': 'object', 'properties': {}},
+            },
+          ],
+        },
+      };
+
+      // Act
+      final response = await chatService.processSamplingRequest(
+          request: samplingRequest,
+      );
+
+        // Assert
+        expect(response['content']['type'], equals('text'));
+        expect(response['content']['text'], equals('It is nice in Tokyo.'));
     });
   });
 }

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
+import '../models/elicitation.dart';
+import '../models/url_elicitation_error.dart';
 import 'openrouter_service.dart';
 import 'mcp_client_service.dart';
 import 'default_model_service.dart';
@@ -23,6 +25,7 @@ class ChatService {
     // Register sampling handler for all MCP clients
     for (final client in _mcpClients.values) {
       client.onSamplingRequest = _handleSamplingRequest;
+      client.onElicitationRequest = _handleElicitationRequest;
     }
   }
 
@@ -106,6 +109,36 @@ class ChatService {
     return completer.future;
   }
 
+  /// Handle elicitation request from an MCP server
+  Future<void> _handleElicitationRequest(
+    ElicitationRequest request,
+    Future<void> Function(
+      String elicitationId,
+      ElicitationAction action,
+      Map<String, dynamic>? content,
+    )
+    sendComplete,
+  ) async {
+    // Emit event to notify UI about the elicitation request
+    _eventController.add(
+      ElicitationRequestReceived(
+        request: request,
+        onRespond: (response) async {
+          // Extract action and content from response
+          final result = response['result'] as Map<String, dynamic>;
+          final actionStr = result['action'] as String;
+          final action = ElicitationAction.fromString(actionStr);
+          final content = result['content'] as Map<String, dynamic>?;
+          // Use the request's elicitationId if provided, otherwise use the request ID
+          final elicitationId = request.elicitationId ?? request.id;
+
+          // Send notification to server
+          await sendComplete(elicitationId, action, content);
+        },
+      ),
+    );
+  }
+
   /// Process a sampling request and return the LLM response
   Future<Map<String, dynamic>> processSamplingRequest({
     required Map<String, dynamic> request,
@@ -119,6 +152,21 @@ class ChatService {
         params['modelPreferences'] as Map<String, dynamic>?;
     final tools = params['tools'] as List?;
     final toolChoice = params['toolChoice'] as Map<String, dynamic>?;
+
+    // Convert MCP toolChoice to OpenRouter format
+    dynamic openRouterToolChoice;
+    if (toolChoice != null) {
+      final type = (toolChoice['type'] ?? toolChoice['mode']) as String?;
+      if (type == 'none' || type == 'auto' || type == 'required') {
+        openRouterToolChoice = type;
+      } else if (type == 'tool' ||
+          (type != null && toolChoice.containsKey('name'))) {
+        openRouterToolChoice = {
+          'type': 'function',
+          'function': {'name': toolChoice['name']},
+        };
+      }
+    }
 
     // Convert MCP messages to OpenRouter format
     final apiMessages = <Map<String, dynamic>>[];
@@ -140,9 +188,9 @@ class ChatService {
 
         for (final block in content) {
           if (block is! Map<String, dynamic>) continue;
-          
+
           final type = block['type'] as String?;
-          
+
           if (type == 'text') {
             convertedContent.add({
               'type': 'text',
@@ -160,7 +208,7 @@ class ChatService {
                 .where((c) => c['type'] == 'text')
                 .map((c) => c['text'])
                 .join('\n');
-            
+
             convertedContent.add({
               'type': 'tool_result',
               'tool_use_id': block['toolUseId'],
@@ -198,7 +246,7 @@ class ChatService {
                   .where((c) => c['type'] == 'text')
                   .map((c) => c['text'])
                   .join('\n');
-              
+
               apiMessages.add({
                 'role': 'tool',
                 'tool_call_id': block['toolUseId'],
@@ -263,56 +311,120 @@ class ChatService {
       print('ChatService: No tools in sampling request (tools param is ${tools == null ? "null" : "empty"})');
     }
 
-    print('ChatService: Calling OpenRouter with ${apiMessages.length} messages, model: $model, tools: ${openRouterTools != null ? openRouterTools.length : 0}');
+    int iterations = 0;
+    const maxSamplingIterations = 10;
 
-    // Call OpenRouter with tools if provided
-    final response = await _openRouterService.chatCompletion(
-      model: model,
-      messages: apiMessages,
-      tools: openRouterTools,
-      maxTokens: maxTokens,
-    );
+    while (iterations < maxSamplingIterations) {
+      iterations++;
+      print(
+        'ChatService: Calling OpenRouter with ${apiMessages.length} messages (iteration $iterations), model: $model, tools: ${openRouterTools != null ? openRouterTools.length : 0}',
+      );
 
-    // Convert OpenRouter response to MCP sampling response format
-    final choice = response['choices'][0];
-    final assistantMessage = choice['message'];
-    final finishReason = choice['finish_reason'];
+      // Call OpenRouter with tools if provided
+      final response = await _openRouterService.chatCompletion(
+        model: model,
+        messages: apiMessages,
+        tools: openRouterTools,
+        toolChoice: openRouterToolChoice,
+        maxTokens: maxTokens,
+      );
 
-    print('ChatService: OpenRouter response - finish_reason: $finishReason, has tool_calls: ${assistantMessage['tool_calls'] != null}');
+      // Convert OpenRouter response to MCP sampling response format
+      final choice = response['choices'][0];
+      final assistantMessage = choice['message'];
+      final finishReason = choice['finish_reason'];
 
-    // Check if response contains tool calls
-    final toolCalls = assistantMessage['tool_calls'] as List?;
-    if (toolCalls != null && toolCalls.isNotEmpty) {
-      print('ChatService: Converting ${toolCalls.length} tool calls to MCP format');
-      // Convert OpenRouter tool_calls to MCP tool_use format
-      final mcpContent = toolCalls.map((toolCall) {
-        final function = toolCall['function'];
-        final argumentsStr = function['arguments'] as String;
-        final arguments = jsonDecode(argumentsStr);
-        
-        return {
-          'type': 'tool_use',
-          'id': toolCall['id'],
-          'name': function['name'],
-          'input': arguments,
-        };
-      }).toList();
+      print(
+        'ChatService: OpenRouter response - finish_reason: $finishReason, has tool_calls: ${assistantMessage['tool_calls'] != null}',
+      );
 
-      // Tool use content is ALWAYS an array (even for single tool)
+      // Check if response contains tool calls
+      final toolCalls = assistantMessage['tool_calls'] as List?;
+      if (toolCalls != null && toolCalls.isNotEmpty) {
+        if (iterations < maxSamplingIterations) {
+          print(
+            'ChatService: Iteration $iterations: Executing ${toolCalls.length} tool calls and continuing loop',
+          );
+          // Execute tool calls
+          try {
+            final toolResults = await _executeToolCalls(toolCalls);
+
+            // Add assistant message with tool calls to apiMessages
+            apiMessages.add({'role': 'assistant', 'tool_calls': toolCalls});
+
+            // Add tool results to apiMessages
+            for (final toolResult in toolResults) {
+              apiMessages.add({
+                'role': 'tool',
+                'tool_call_id': toolResult['toolId'],
+                'content': toolResult['result'],
+              });
+            }
+
+            // Continue to next iteration
+            continue;
+          } on URLElicitationRequiredError catch (e) {
+            // For sampling requests, we can't handle elicitations mid-request
+            // Return an error message instead
+            print(
+              'ChatService: URLElicitationRequiredError in sampling: ${e.message}',
+            );
+            return {
+              'role': 'assistant',
+              'content': {
+                'type': 'text',
+                'text':
+                    'Error: This operation requires authorization. ${e.message}',
+              },
+              'model': model,
+              'stopReason': 'endTurn',
+            };
+          }
+        } else {
+          print(
+            'ChatService: Max iterations reached, returning tool calls to server',
+          );
+          // Convert OpenRouter tool_calls to MCP tool_use format
+          final mcpContent = toolCalls.map((toolCall) {
+            final function = toolCall['function'];
+            final argumentsStr = function['arguments'] as String;
+            final arguments = jsonDecode(argumentsStr);
+
+            return {
+              'type': 'tool_use',
+              'id': toolCall['id'],
+              'name': function['name'],
+              'input': arguments,
+            };
+          }).toList();
+
+          return {
+            'role': 'assistant',
+            'content': mcpContent,
+            'model': model,
+            'stopReason': 'toolUse',
+          };
+        }
+      }
+
+      // Regular text response
       return {
         'role': 'assistant',
-        'content': mcpContent,
+        'content': {'type': 'text', 'text': assistantMessage['content'] ?? ''},
         'model': model,
-        'stopReason': 'toolUse',
+        'stopReason': _convertFinishReason(finishReason),
       };
     }
 
-    // Regular text response
+    // Fallback (should not be reached due to returns inside loop)
     return {
       'role': 'assistant',
-      'content': {'type': 'text', 'text': assistantMessage['content']},
+      'content': {
+        'type': 'text',
+        'text': 'Error: Maximum sampling iterations exceeded',
+      },
       'model': model,
-      'stopReason': _convertFinishReason(finishReason),
+      'stopReason': 'endTurn',
     };
   }
 
@@ -554,12 +666,47 @@ class ChatService {
         final tools = entry.value;
 
         if (tools.any((t) => t.name == toolName)) {
+          final mcpClient = _mcpClients[serverId];
           try {
-            final mcpClient = _mcpClients[serverId];
             if (mcpClient != null) {
               final toolResult = await mcpClient.callTool(toolName, toolArgs);
               result = toolResult.content.map((c) => c.text ?? '').join('\n');
             }
+          } on URLElicitationRequiredError catch (e) {
+            // Don't retry - just emit the elicitation and return a placeholder result
+            print(
+              'ChatService: URLElicitationRequiredError caught for tool $toolName',
+            );
+
+            // Emit elicitation events for each required elicitation
+            for (final elicitation in e.elicitations) {
+              _eventController.add(
+                ElicitationRequestReceived(
+                  request: elicitation,
+                  onRespond: (response) async {
+                    // Extract action and content from response
+                    final result = response['result'] as Map<String, dynamic>;
+                    final actionStr = result['action'] as String;
+                    final action = ElicitationAction.fromString(actionStr);
+                    final content = result['content'] as Map<String, dynamic>?;
+                    // Use the request's elicitationId if provided, otherwise use the request ID
+                    final elicitationId = elicitation.elicitationId ?? elicitation.id;
+
+                    // Send notification to server via the MCP client
+                    if (mcpClient != null) {
+                      await mcpClient.sendElicitationComplete(
+                        elicitationId,
+                        action,
+                        content,
+                      );
+                    }
+                  },
+                ),
+              );
+            }
+
+            // Return a placeholder result indicating elicitation is in progress
+            result = 'Elicitation request displayed to user.';
           } catch (e) {
             result = 'Error executing tool: $e';
           }
@@ -661,4 +808,12 @@ class SamplingRequestReceived extends ChatEvent {
     required this.onApprove,
     required this.onReject,
   });
+}
+
+/// Event emitted when an elicitation request is received from an MCP server
+class ElicitationRequestReceived extends ChatEvent {
+  final ElicitationRequest request;
+  final Function(Map<String, dynamic> response) onRespond;
+
+  ElicitationRequestReceived({required this.request, required this.onRespond});
 }

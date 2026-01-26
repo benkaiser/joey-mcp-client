@@ -13,6 +13,7 @@ import 'package:joey_mcp_client_flutter/services/database_service.dart';
 import 'package:joey_mcp_client_flutter/services/chat_service.dart';
 import 'package:joey_mcp_client_flutter/services/mcp_client_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:dio/dio.dart';
 
 /// Mock MCP Client Service for testing
 class MockMcpClientService extends McpClientService {
@@ -162,6 +163,7 @@ class MockOpenRouterServiceForMcp extends OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    dynamic toolChoice,
     bool stream = false,
     int? maxTokens,
   }) async {
@@ -191,6 +193,7 @@ class MockOpenRouterServiceForMcp extends OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    CancelToken? cancelToken,
   }) async* {
     await Future.delayed(const Duration(milliseconds: 100));
 

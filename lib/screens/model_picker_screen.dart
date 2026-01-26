@@ -40,13 +40,11 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
       });
     } on OpenRouterAuthException {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Authentication expired. Please log in again.'),
-            backgroundColor: Colors.orange,
-          ),
+        // Navigate to auth screen - replace entire navigation stack
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/auth', (route) => false,
         );
-        Navigator.of(context).pop();
       }
     } catch (e) {
       setState(() {

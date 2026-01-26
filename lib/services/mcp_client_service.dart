@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import '../models/elicitation.dart';
+import '../models/url_elicitation_error.dart';
 
 /// MCP Tool definition
 class McpTool {
@@ -76,14 +78,28 @@ class McpClientService {
   Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
   onSamplingRequest;
 
+  /// Callback for handling elicitation requests from the server
+  /// Should call sendElicitationComplete when user responds
+  Future<void> Function(
+    ElicitationRequest request,
+    Future<void> Function(
+      String elicitationId,
+      ElicitationAction action,
+      Map<String, dynamic>? content,
+    )
+    sendComplete,
+  )?
+  onElicitationRequest;
+
   McpClientService({required this.serverUrl, this.headers})
     : _dio = Dio(
         BaseOptions(
           headers: headers?.map(
             (key, value) => MapEntry(key, value as dynamic),
           ),
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
+          // No timeout - allow infinite wait for elicitation responses
+          connectTimeout: null,
+          receiveTimeout: null,
         ),
       );
 
@@ -98,7 +114,11 @@ class McpClientService {
           'method': 'initialize',
           'params': {
             'protocolVersion': '2024-11-05',
-            'capabilities': {'tools': {}, 'sampling': {}},
+            'capabilities': {
+              'tools': {},
+              'sampling': {},
+              'elicitation': {'form': {}, 'url': {}},
+            },
             'clientInfo': {
               'name': 'joey-mcp-client-flutter',
               'version': '1.0.0',
@@ -272,6 +292,14 @@ class McpClientService {
         final data = _parseSSEResponse(responseBody);
 
         if (data['error'] != null) {
+          final errorData = data['error'] as Map<String, dynamic>;
+          final errorCode = errorData['code'] as int?;
+
+          // Check for URLElicitationRequiredError
+          if (errorCode == -32042) {
+            throw URLElicitationRequiredError.fromJson(errorData);
+          }
+
           throw Exception('MCP tools/call error: ${data['error']}');
         }
 
@@ -344,10 +372,39 @@ class McpClientService {
                   'Sampling request failed: $e',
                 );
               }
+            } else if (message['method'] == 'elicitation/create') {
+              // Handle elicitation request
+              print('MCP: Handling elicitation request...');
+              try {
+                final elicitationRequest = ElicitationRequest.fromJson(message);
+
+                // Handle the request asynchronously (will send notification when complete)
+                handleElicitationRequest(elicitationRequest);
+              } catch (e) {
+                print('MCP: Elicitation request failed: $e');
+                // Send error response
+                await _sendErrorResponse(
+                  message['id'],
+                  -32603,
+                  'Elicitation request failed: $e',
+                );
+              }
             } else {
               print(
                 'MCP: Unhandled server request method: ${message['method']}',
               );
+            }
+          }
+          // Check if this is a notification from the server
+          else if (message['method'] != null && message['id'] == null) {
+            print('MCP: Received notification: ${message['method']}');
+
+            if (message['method'] == 'notifications/elicitation/complete') {
+              final params = message['params'] as Map<String, dynamic>?;
+              final elicitationId = params?['elicitationId'] as String?;
+              print('MCP: Elicitation completed: $elicitationId');
+              // Note: We don't do anything with this notification currently
+              // but clients could use it to retry requests or update UI
             }
           }
           // Check if this is the response to our original request
@@ -361,6 +418,14 @@ class McpClientService {
             print(
               'MCP: Received error for request ID $requestId: ${message['error']}',
             );
+            final errorData = message['error'] as Map<String, dynamic>;
+            final errorCode = errorData['code'] as int?;
+
+            // Check for URLElicitationRequiredError
+            if (errorCode == -32042) {
+              throw URLElicitationRequiredError.fromJson(errorData);
+            }
+
             throw Exception('MCP tools/call error: ${message['error']}');
           }
         } catch (e) {
@@ -389,9 +454,11 @@ class McpClientService {
     Map<String, dynamic> result,
   ) async {
     try {
+      final payload = {'jsonrpc': '2.0', 'id': messageId, 'result': result};
+      print('MCP: Sending response for ID $messageId: ${jsonEncode(payload)}');
       await _dio.post(
         serverUrl,
-        data: {'jsonrpc': '2.0', 'id': messageId, 'result': result},
+        data: payload,
         options: Options(headers: _buildRequestHeaders()),
       );
     } catch (e) {
@@ -406,13 +473,15 @@ class McpClientService {
     String message,
   ) async {
     try {
+      final payload = {
+        'jsonrpc': '2.0',
+        'id': messageId,
+        'error': {'code': code, 'message': message},
+      };
+      print('MCP: Sending error for ID $messageId: ${jsonEncode(payload)}');
       await _dio.post(
         serverUrl,
-        data: {
-          'jsonrpc': '2.0',
-          'id': messageId,
-          'error': {'code': code, 'message': message},
-        },
+        data: payload,
         options: Options(headers: _buildRequestHeaders()),
       );
     } catch (e) {
@@ -429,6 +498,48 @@ class McpClientService {
     }
 
     return await onSamplingRequest!(request);
+  }
+
+  /// Handle incoming elicitation request from server
+  Future<void> handleElicitationRequest(ElicitationRequest request) async {
+    if (onElicitationRequest == null) {
+      throw Exception('No elicitation request handler registered');
+    }
+
+    // Call handler with sendComplete callback
+    await onElicitationRequest!(request, sendElicitationComplete);
+  }
+
+  /// Send elicitation complete notification to the server
+  Future<void> sendElicitationComplete(
+    String elicitationId,
+    ElicitationAction action,
+    Map<String, dynamic>? content,
+  ) async {
+    try {
+      final params = <String, dynamic>{
+        'elicitationId': elicitationId,
+        'action': action.toJson(),
+      };
+
+      if (content != null && content.isNotEmpty) {
+        params['content'] = content;
+      }
+
+      await _dio.post(
+        serverUrl,
+        data: {
+          'jsonrpc': '2.0',
+          'method': 'notifications/elicitation/complete',
+          'params': params,
+        },
+        options: Options(headers: _buildRequestHeaders()),
+      );
+      print('MCP: Elicitation complete notification sent: $elicitationId');
+    } catch (e) {
+      print('MCP: Failed to send elicitation complete notification: $e');
+      rethrow;
+    }
   }
 
   /// Close the connection (for cleanup)

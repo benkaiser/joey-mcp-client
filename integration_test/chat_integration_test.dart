@@ -12,6 +12,7 @@ import 'package:joey_mcp_client_flutter/services/database_service.dart';
 import 'package:joey_mcp_client_flutter/services/chat_service.dart';
 import 'package:joey_mcp_client_flutter/screens/chat_screen.dart';
 import 'package:uuid/uuid.dart';
+import 'package:dio/dio.dart';
 
 /// Mock OpenRouter Service for testing
 class MockOpenRouterService extends OpenRouterService {
@@ -54,6 +55,7 @@ class MockOpenRouterService extends OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    dynamic toolChoice,
     bool stream = false,
     int? maxTokens,
   }) async {
@@ -61,6 +63,7 @@ class MockOpenRouterService extends OpenRouterService {
       'model': model,
       'messages': messages,
       'tools': tools,
+      'toolChoice': toolChoice,
       'stream': stream,
       'maxTokens': maxTokens,
     });
@@ -95,6 +98,7 @@ class MockOpenRouterService extends OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    CancelToken? cancelToken,
   }) async* {
     _callHistory.add({
       'model': model,

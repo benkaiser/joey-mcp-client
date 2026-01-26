@@ -62,13 +62,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       } on OpenRouterAuthException {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Authentication expired. Please log in again.'),
-              backgroundColor: Colors.orange,
-            ),
+          // Navigate to auth screen - replace entire navigation stack
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/auth', (route) => false,
           );
-          Navigator.of(context).pop();
         }
       } catch (e) {
         if (mounted) {
@@ -192,8 +190,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: const Icon(Icons.chat),
               title: const Text('Customize System Prompt'),
               subtitle: Text(
-                _systemPrompt.length > 50 
-                    ? '${_systemPrompt.substring(0, 50)}...' 
+                _systemPrompt.length > 50
+                    ? '${_systemPrompt.substring(0, 50)}...'
                     : _systemPrompt,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

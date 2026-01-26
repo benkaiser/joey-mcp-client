@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
+import '../models/elicitation.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
@@ -14,6 +15,8 @@ import '../services/mcp_client_service.dart';
 import '../services/chat_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/sampling_request_dialog.dart';
+import '../widgets/elicitation_url_card.dart';
+import '../widgets/elicitation_form_card.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -41,6 +44,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _currentToolName;
   bool _isToolExecuting = false; // true = calling, false = called
   bool _authenticationRequired = false;
+  ElicitationRequest? _pendingElicitation;
+  Function(Map<String, dynamic>)? _elicitationResponder;
+  // Track responded elicitations to prevent duplicate sends
+  final Set<String> _respondedElicitationIds = {};
 
   @override
   void initState() {
@@ -116,16 +123,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void _handleAuthError() {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Authentication expired. Please log in again.'),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 3),
-      ),
+    // Navigate to auth screen - replace entire navigation stack
+    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false,
     );
-
-    // Navigate back to conversation list, which will redirect to auth
-    Navigator.of(context).pop();
   }
 
   void _scrollToBottom() {
@@ -186,6 +186,10 @@ class _ChatScreenState extends State<ChatScreen> {
         _isLoading = true;
         _streamingContent = '';
         _authenticationRequired = false; // Reset auth flag on new message
+        _pendingElicitation = null; // Clear previous elicitations
+        _elicitationResponder = null;
+        _respondedElicitationIds
+            .clear(); // Clear responded IDs for new conversation turn
       });
 
       try {
@@ -266,7 +270,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _handleChatEvent(ChatEvent event, ConversationProvider provider) {
     if (!mounted) return;
 
-    if (event is ContentChunk) {
+    if (event is StreamingStarted) {
+      // New iteration starting - clear tool execution state
+      setState(() {
+        _currentToolName = null;
+        _isToolExecuting = false;
+      });
+    } else if (event is ContentChunk) {
       setState(() {
         _streamingContent = event.content;
         _currentToolName = null; // Clear tool name when content is streaming
@@ -314,6 +324,12 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } else if (event is SamplingRequestReceived) {
       _showSamplingRequestDialog(event);
+    } else if (event is ElicitationRequestReceived) {
+      setState(() {
+        _pendingElicitation = event.request;
+        _elicitationResponder = event.onRespond;
+      });
+      _scrollToBottom();
     } else if (event is AuthenticationRequired) {
       // Handle auth error by showing a message in the chat
       // The error will be displayed as a special card in the message list
@@ -369,6 +385,56 @@ class _ChatScreenState extends State<ChatScreen> {
         },
       ),
     );
+  }
+
+  /// Handle URL mode elicitation response
+  Future<void> _handleUrlElicitationResponse(ElicitationAction action) async {
+    if (_elicitationResponder == null) return;
+
+    final elicitationId = _pendingElicitation?.elicitationId ?? '';
+
+    // Check if we've already responded to this elicitation
+    if (_respondedElicitationIds.contains(elicitationId)) {
+      print('Already responded to elicitation $elicitationId, skipping');
+      return;
+    }
+
+    final response = _pendingElicitation!.toResponseJson(action: action);
+    _elicitationResponder!(response);
+
+    // Mark as responded but keep the card visible
+    setState(() {
+      _respondedElicitationIds.add(elicitationId);
+      // Don't clear _pendingElicitation - keep the card visible
+    });
+  }
+
+  /// Handle form mode elicitation response
+  Future<void> _handleFormElicitationResponse(
+    ElicitationAction action,
+    Map<String, dynamic>? content,
+  ) async {
+    if (_elicitationResponder == null) return;
+
+    final elicitationId = _pendingElicitation?.elicitationId ?? '';
+
+    // Check if we've already responded to this elicitation
+    if (_respondedElicitationIds.contains(elicitationId)) {
+      print('Already responded to elicitation $elicitationId, skipping');
+      return;
+    }
+
+    final response = _pendingElicitation!.toResponseJson(
+      action: action,
+      content: content,
+    );
+    _elicitationResponder!(response);
+
+    // Mark as responded but keep the card visible
+    setState(() {
+      _respondedElicitationIds.add(elicitationId);
+      // Don't clear _pendingElicitation - keep the card visible
+    });
   }
 
   Widget _buildAuthRequiredCard() {
@@ -680,8 +746,32 @@ class _ChatScreenState extends State<ChatScreen> {
                                   _streamingReasoning.isNotEmpty)
                               ? 1
                               : 0) +
-                          (_authenticationRequired ? 1 : 0),
+                          (_authenticationRequired ? 1 : 0) +
+                          (_pendingElicitation != null ? 1 : 0),
                       itemBuilder: (context, index) {
+                        // Show elicitation card at the end
+                        if (_pendingElicitation != null &&
+                            index ==
+                                displayMessages.length +
+                                    ((_streamingContent.isNotEmpty ||
+                                            _streamingReasoning.isNotEmpty)
+                                        ? 1
+                                        : 0) +
+                                    (_authenticationRequired ? 1 : 0)) {
+                          if (_pendingElicitation!.mode ==
+                              ElicitationMode.url) {
+                            return ElicitationUrlCard(
+                              request: _pendingElicitation!,
+                              onRespond: _handleUrlElicitationResponse,
+                            );
+                          } else {
+                            return ElicitationFormCard(
+                              request: _pendingElicitation!,
+                              onRespond: _handleFormElicitationResponse,
+                            );
+                          }
+                        }
+
                         // Show auth required card at the end
                         if (_authenticationRequired &&
                             index ==

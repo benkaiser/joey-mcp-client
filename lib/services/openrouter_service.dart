@@ -134,6 +134,7 @@ class OpenRouterService {
     required String model,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
+    dynamic toolChoice,
     bool stream = false,
     int? maxTokens,
   }) async {
@@ -151,6 +152,10 @@ class OpenRouterService {
 
       if (tools != null && tools.isNotEmpty) {
         requestData['tools'] = tools;
+      }
+
+      if (toolChoice != null) {
+        requestData['tool_choice'] = toolChoice;
       }
 
       if (maxTokens != null) {
@@ -223,6 +228,9 @@ class OpenRouterService {
       if (tools != null && tools.isNotEmpty) {
         requestData['tools'] = tools;
       }
+
+      print('OpenRouter: Full request body: ${jsonEncode(requestData)}');
+
 
       final response = await _dio.post<ResponseBody>(
         'https://openrouter.ai/api/v1/chat/completions',
