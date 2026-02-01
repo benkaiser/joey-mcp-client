@@ -159,12 +159,9 @@ class MessageBubble extends StatelessWidget {
                               ],
                               // Assistant content - no bubble
                               if (message.content.isNotEmpty)
-                                Markdown(
+                                MarkdownBody(
                                   data: message.content,
                                   shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  selectable: true,
-                                  padding: EdgeInsets.zero,
                                   styleSheet: MarkdownStyleSheet(
                                     p: TextStyle(
                                       color: Theme.of(
