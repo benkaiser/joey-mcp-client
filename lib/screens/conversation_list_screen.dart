@@ -18,7 +18,6 @@ class ConversationListScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Joey MCP Client'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -56,9 +55,9 @@ class ConversationListScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Start a new chat to get started',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -218,16 +217,16 @@ class _ConversationListItem extends StatelessWidget {
           ),
           Text(
             DateFormatter.formatConversationDate(conversation.updatedAt),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         onPressed: onDelete,
-        color: Colors.grey[600],
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       onTap: onTap,
     );

@@ -70,7 +70,7 @@ class ElicitationUrlCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade200,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: SelectableText(
@@ -83,7 +83,7 @@ class ElicitationUrlCard extends StatelessWidget {
               'Domain: ${uri.host}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.blue.shade700,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
           ],
@@ -147,18 +147,18 @@ class ElicitationUrlCard extends StatelessWidget {
     String title;
 
     if (isCompleted) {
-      borderColor = Colors.green.shade400;
-      iconColor = Colors.green.shade700;
+      borderColor = Colors.green.shade600;
+      iconColor = Colors.green.shade500;
       icon = Icons.check_circle;
       title = 'URL Opened';
     } else if (isDeclined) {
-      borderColor = Colors.grey.shade400;
-      iconColor = Colors.grey.shade600;
+      borderColor = Theme.of(context).colorScheme.outline;
+      iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
       icon = Icons.cancel;
       title = 'Action Declined';
     } else {
-      borderColor = Colors.blue.shade300;
-      iconColor = Colors.blue.shade700;
+      borderColor = Theme.of(context).colorScheme.primary;
+      iconColor = Theme.of(context).colorScheme.primary;
       icon = Icons.link;
       title = 'External Action Required';
     }
@@ -191,10 +191,7 @@ class ElicitationUrlCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              request.message,
-              style: const TextStyle(fontSize: 14),
-            ),
+            Text(request.message, style: const TextStyle(fontSize: 14)),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -215,9 +212,11 @@ class ElicitationUrlCard extends StatelessWidget {
                   label: Text(_isResponded ? 'Open URL Again' : 'Open URL'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _isResponded
-                        ? Colors.grey.shade600
-                        : Colors.blue.shade700,
-                    foregroundColor: Colors.white,
+                        ? Theme.of(context).colorScheme.surfaceContainerHighest
+                        : Theme.of(context).colorScheme.primary,
+                    foregroundColor: _isResponded
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Theme.of(context).colorScheme.onPrimary,
                   ),
                 ),
               ],

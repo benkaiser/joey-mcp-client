@@ -491,11 +491,14 @@ class _ChatScreenState extends State<ChatScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Card(
-        color: Colors.orange.shade50,
+        color: Theme.of(context).colorScheme.errorContainer,
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.orange.shade300, width: 1),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.error,
+            width: 1,
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -504,14 +507,17 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.lock_outline, color: Colors.orange.shade700),
+                  Icon(
+                    Icons.lock_outline,
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Authentication Required',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade900,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
                     ),
                   ),
                 ],
@@ -519,7 +525,10 @@ class _ChatScreenState extends State<ChatScreen> {
               const SizedBox(height: 12),
               Text(
                 'Your OpenRouter session has expired. Please sign in again to continue chatting.',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade800),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -532,8 +541,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   icon: const Icon(Icons.login),
                   label: const Text('Sign In with OpenRouter'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade700,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -589,9 +598,12 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Edit your message below. All messages after this one will be removed, and the conversation will continue from this point.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -754,7 +766,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             Text(
                               'Type a message below to begin',
                               style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: Colors.grey[600]),
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ),
@@ -1048,7 +1064,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   : 'Called tool $_currentToolName')
                             : 'Thinking...',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1070,7 +1086,7 @@ class _ChatScreenState extends State<ChatScreen> {
           BoxShadow(
             offset: const Offset(0, -1),
             blurRadius: 4,
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withValues(alpha: 0.3),
           ),
         ],
       ),
@@ -1108,9 +1124,11 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: Icon(_isLoading ? Icons.stop : Icons.send),
               style: IconButton.styleFrom(
                 backgroundColor: _isLoading
-                    ? Colors.red
+                    ? Theme.of(context).colorScheme.error
                     : Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                foregroundColor: _isLoading
+                    ? Theme.of(context).colorScheme.onError
+                    : Theme.of(context).colorScheme.onPrimary,
               ),
             ),
           ],

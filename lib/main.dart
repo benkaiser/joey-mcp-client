@@ -36,6 +36,49 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Joey MCP Client',
         debugShowCheckedModeBanner: false,
+        themeMode: ThemeMode.dark,
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color.fromARGB(255, 1, 234, 255),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+          scaffoldBackgroundColor: const Color(0xFF0D1117),
+          cardTheme: CardThemeData(
+            color: const Color(0xFF161B22),
+            elevation: 0,
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF161B22),
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          dialogTheme: DialogThemeData(
+            backgroundColor: const Color(0xFF1C2128),
+          ),
+          snackBarTheme: const SnackBarThemeData(
+            backgroundColor: Color(0xFF1C2128),
+            contentTextStyle: TextStyle(color: Colors.white),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: const Color(0xFF1C2128),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF30363D)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF30363D)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF01EAFF), width: 2),
+            ),
+          ),
+          dividerColor: const Color(0xFF30363D),
+          listTileTheme: const ListTileThemeData(iconColor: Colors.white70),
+        ),
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color.fromARGB(255, 1, 234, 255),

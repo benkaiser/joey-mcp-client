@@ -149,11 +149,11 @@ class _SamplingRequestDialogState extends State<SamplingRequestDialog> {
         params['modelPreferences'] as Map<String, dynamic>?;
 
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.psychology, color: Colors.blue),
-          SizedBox(width: 8),
-          Text('MCP Sampling Request'),
+          Icon(Icons.psychology, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          const Text('MCP Sampling Request'),
         ],
       ),
       content: SingleChildScrollView(

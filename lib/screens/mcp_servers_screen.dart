@@ -127,10 +127,7 @@ class _McpServersScreenState extends State<McpServersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('MCP Servers'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: AppBar(title: const Text('MCP Servers')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _servers.isEmpty
@@ -153,9 +150,9 @@ class _McpServersScreenState extends State<McpServersScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Add a server to get started',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),

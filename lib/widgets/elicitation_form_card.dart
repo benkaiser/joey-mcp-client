@@ -42,10 +42,8 @@ class ElicitationFormCard extends StatelessWidget {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (context) => ElicitationFormScreen(
-          request: request,
-          form: form,
-        ),
+        builder: (context) =>
+            ElicitationFormScreen(request: request, form: form),
         fullscreenDialog: true,
       ),
     );
@@ -57,7 +55,7 @@ class ElicitationFormCard extends StatelessWidget {
     }
   }
 
-  Widget _buildSubmittedValuesView() {
+  Widget _buildSubmittedValuesView(BuildContext context) {
     if (submittedContent == null || submittedContent!.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -66,19 +64,19 @@ class ElicitationFormCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        const Text(
+        Text(
           'Submitted Values:',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: Colors.grey,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -132,18 +130,18 @@ class ElicitationFormCard extends StatelessWidget {
     String title;
 
     if (isSubmitted) {
-      borderColor = Colors.green.shade400;
-      iconColor = Colors.green.shade700;
+      borderColor = Colors.green.shade600;
+      iconColor = Colors.green.shade500;
       icon = Icons.check_circle;
       title = 'Form Submitted';
     } else if (isDeclined) {
-      borderColor = Colors.grey.shade400;
-      iconColor = Colors.grey.shade600;
+      borderColor = Theme.of(context).colorScheme.outline;
+      iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
       icon = Icons.cancel;
       title = 'Form Declined';
     } else {
-      borderColor = Colors.green.shade300;
-      iconColor = Colors.green.shade700;
+      borderColor = Colors.green.shade600;
+      iconColor = Colors.green.shade500;
       icon = Icons.edit_note;
       title = 'Form Required';
     }
@@ -176,11 +174,8 @@ class ElicitationFormCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              request.message,
-              style: const TextStyle(fontSize: 14),
-            ),
-            if (isSubmitted) _buildSubmittedValuesView(),
+            Text(request.message, style: const TextStyle(fontSize: 14)),
+            if (isSubmitted) _buildSubmittedValuesView(context),
             if (!_isResponded) ...[
               const SizedBox(height: 16),
               Row(

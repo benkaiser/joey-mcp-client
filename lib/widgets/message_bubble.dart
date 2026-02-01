@@ -111,7 +111,9 @@ class MessageBubble extends StatelessWidget {
                                         child: Icon(
                                           Icons.psychology_outlined,
                                           size: 14,
-                                          color: Colors.grey[500],
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                       const SizedBox(width: 6),
@@ -119,7 +121,9 @@ class MessageBubble extends StatelessWidget {
                                         child: Text(
                                           message.reasoning!,
                                           style: TextStyle(
-                                            color: Colors.grey[500],
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                             fontSize: 13,
                                             fontStyle: FontStyle.italic,
                                           ),
@@ -134,13 +138,17 @@ class MessageBubble extends StatelessWidget {
                                       Icon(
                                         Icons.psychology_outlined,
                                         size: 14,
-                                        color: Colors.grey[500],
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
                                         'Thinking...',
                                         style: TextStyle(
-                                          color: Colors.grey[500],
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
                                           fontSize: 13,
                                           fontStyle: FontStyle.italic,
                                         ),
@@ -242,7 +250,7 @@ class MessageBubble extends StatelessWidget {
                       Text(
                         DateFormatter.formatMessageTimestamp(message.timestamp),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 11,
                         ),
                       ),
@@ -293,7 +301,11 @@ class MessageBubble extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(4),
-          child: Icon(icon, size: 14, color: Colors.grey[600]),
+          child: Icon(
+            icon,
+            size: 14,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

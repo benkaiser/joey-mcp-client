@@ -20,20 +20,26 @@ class ThinkingIndicator extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 6,
         children: indicators.map((indicator) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Icon(indicator.icon, size: 14, color: Colors.grey[500]),
-              const SizedBox(width: 6),
-              Text(
-                indicator.text,
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 13,
-                  fontStyle: FontStyle.italic,
+          return Builder(
+            builder: (context) => Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Icon(
+                  indicator.icon,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Text(
+                  indicator.text,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           );
         }).toList(),
       ),

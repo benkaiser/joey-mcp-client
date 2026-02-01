@@ -36,7 +36,8 @@ class _AuthScreenState extends State<AuthScreen> {
       (Uri uri) {
         // Listen to both custom scheme (joey://auth) and HTTPS URL
         final isCustomScheme = uri.scheme == 'joey' && uri.host == 'auth';
-        final isHttpsCallback = uri.scheme == 'https' &&
+        final isHttpsCallback =
+            uri.scheme == 'https' &&
             uri.host == 'openrouterauth.benkaiser.dev' &&
             uri.path == '/api/auth';
 
@@ -135,9 +136,9 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 12),
               Text(
                 'Connect with OpenRouter to start chatting with AI models',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
@@ -198,9 +199,13 @@ class _AuthScreenState extends State<AuthScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,7 +214,9 @@ class _AuthScreenState extends State<AuthScreen> {
                       children: [
                         Icon(
                           Icons.info_outline,
-                          color: Colors.blue[700],
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -217,7 +224,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           'What is OpenRouter?',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
                           ),
                         ),
                       ],
@@ -225,7 +234,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'OpenRouter provides access to multiple AI models through a single API. You\'ll be redirected to their website to authorize this app.',
-                      style: TextStyle(fontSize: 13, color: Colors.blue[900]),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
                     ),
                   ],
                 ),

@@ -43,8 +43,7 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
         // Navigate to auth screen - replace entire navigation stack
         Navigator.of(
           context,
-        ).pushNamedAndRemoveUntil('/auth', (route) => false,
-        );
+        ).pushNamedAndRemoveUntil('/auth', (route) => false);
       }
     } catch (e) {
       setState(() {
@@ -71,7 +70,6 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Select Model'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           if (_selectedDefaultModel != null)
             Padding(
@@ -134,7 +132,9 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
               child: Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -260,7 +260,9 @@ class _ModelListItem extends StatelessWidget {
                           id,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: Colors.grey[600],
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                                 fontFamily: 'monospace',
                               ),
                         ),

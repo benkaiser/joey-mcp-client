@@ -71,7 +71,10 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
     }
 
     // Return accept with content
-    Navigator.pop(context, {'action': ElicitationAction.accept, 'content': _values});
+    Navigator.pop(context, {
+      'action': ElicitationAction.accept,
+      'content': _values,
+    });
   }
 
   void _decline() {
@@ -109,8 +112,8 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
       keyboardType: field.format == 'email'
           ? TextInputType.emailAddress
           : field.format == 'uri'
-              ? TextInputType.url
-              : TextInputType.text,
+          ? TextInputType.url
+          : TextInputType.text,
       onChanged: (value) {
         setState(() {
           _values[field.name] = value;
@@ -202,10 +205,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
       ),
       items: field.enumValues?.map((enumValue) {
         final title = field.enumTitles?[enumValue] ?? enumValue;
-        return DropdownMenuItem(
-          value: enumValue,
-          child: Text(title),
-        );
+        return DropdownMenuItem(value: enumValue, child: Text(title));
       }).toList(),
       onChanged: (newValue) {
         setState(() {
@@ -228,10 +228,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
       children: [
         Text(
           field.label,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         if (field.description != null) ...[
           const SizedBox(height: 4),
@@ -239,7 +236,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
             field.description!,
             style: TextStyle(
               fontSize: 12,
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -302,17 +299,25 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Card(
-              color: Colors.blue.shade50,
+              color: Theme.of(context).colorScheme.primaryContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, color: Colors.blue.shade700),
+                    Icon(
+                      Icons.info_outline,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         widget.request.message,
-                        style: const TextStyle(fontSize: 14),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
                       ),
                     ),
                   ],

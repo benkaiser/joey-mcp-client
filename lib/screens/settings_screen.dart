@@ -65,8 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Navigate to auth screen - replace entire navigation stack
           Navigator.of(
             context,
-          ).pushNamedAndRemoveUntil('/auth', (route) => false,
-          );
+          ).pushNamedAndRemoveUntil('/auth', (route) => false);
         }
       } catch (e) {
         if (mounted) {
@@ -106,10 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
           // Default Model Section
@@ -375,7 +371,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('System prompt reset to default')),
+                  const SnackBar(
+                    content: Text('System prompt reset to default'),
+                  ),
                 );
               }
             },
