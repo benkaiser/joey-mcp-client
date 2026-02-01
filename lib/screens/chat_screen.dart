@@ -55,6 +55,16 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadModelDetails();
     _loadMcpServers();
+    _loadShowThinking();
+  }
+
+  Future<void> _loadShowThinking() async {
+    final showThinking = await DefaultModelService.getShowThinking();
+    if (mounted) {
+      setState(() {
+        _showThinking = showThinking;
+      });
+    }
   }
 
   Future<void> _loadMcpServers() async {
@@ -730,9 +740,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   _showThinking ? Icons.visibility : Icons.visibility_off,
                 ),
                 tooltip: _showThinking ? 'Hide thinking' : 'Show thinking',
-                onPressed: () {
+                onPressed: () async {
+                  final newValue = !_showThinking;
+                  await DefaultModelService.setShowThinking(newValue);
                   setState(() {
-                    _showThinking = !_showThinking;
+                    _showThinking = newValue;
                   });
                 },
               ),
