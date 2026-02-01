@@ -93,10 +93,6 @@ class _SamplingRequestDialogState extends State<SamplingRequestDialog> {
       approvedRequest['params'] = params;
 
       await widget.onApprove(approvedRequest);
-
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,6 +107,8 @@ class _SamplingRequestDialogState extends State<SamplingRequestDialog> {
         setState(() {
           _isProcessing = false;
         });
+        // Always close the dialog after approval attempt
+        Navigator.of(context).pop();
       }
     }
   }

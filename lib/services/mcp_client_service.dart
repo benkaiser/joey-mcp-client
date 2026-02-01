@@ -1,9 +1,8 @@
-import 'dart:convert';
-import 'package:dio/dio.dart';
-import '../models/elicitation.dart';
-import '../models/url_elicitation_error.dart';
+import 'dart:async';
+import 'package:mcp_dart/mcp_dart.dart';
+import '../models/elicitation.dart' as app_elicitation;
 
-/// MCP Tool definition
+/// Wrapper around mcp_dart Tool for backward compatibility
 class McpTool {
   final String name;
   final String? description;
@@ -11,11 +10,11 @@ class McpTool {
 
   McpTool({required this.name, this.description, required this.inputSchema});
 
-  factory McpTool.fromJson(Map<String, dynamic> json) {
+  factory McpTool.fromMcpDartTool(Tool tool) {
     return McpTool(
-      name: json['name'],
-      description: json['description'],
-      inputSchema: json['inputSchema'] ?? {},
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema?.toJson() ?? {},
     );
   }
 
@@ -32,222 +31,307 @@ class McpTool {
   }
 }
 
-/// MCP Tool call result
+/// Wrapper around mcp_dart CallToolResult for backward compatibility
 class McpToolResult {
   final List<McpContent> content;
   final bool? isError;
 
   McpToolResult({required this.content, this.isError});
 
-  factory McpToolResult.fromJson(Map<String, dynamic> json) {
+  factory McpToolResult.fromMcpDartResult(CallToolResult result) {
     return McpToolResult(
-      content: (json['content'] as List)
-          .map((c) => McpContent.fromJson(c))
+      content: result.content
+          .map((c) => McpContent.fromMcpDartContent(c))
           .toList(),
-      isError: json['isError'],
+      isError: result.isError,
     );
   }
 }
 
-/// MCP Content
+/// Wrapper around mcp_dart Content for backward compatibility
 class McpContent {
   final String type;
   final String? text;
-  final dynamic data; // For other content types
+  final dynamic data;
 
   McpContent({required this.type, this.text, this.data});
 
-  factory McpContent.fromJson(Map<String, dynamic> json) {
-    return McpContent(
-      type: json['type'],
-      text: json['text'],
-      data: json['data'],
-    );
+  factory McpContent.fromMcpDartContent(Content content) {
+    if (content is TextContent) {
+      return McpContent(type: 'text', text: content.text);
+    } else if (content is ImageContent) {
+      return McpContent(type: 'image', data: content.data);
+    } else if (content is EmbeddedResource) {
+      return McpContent(type: 'resource', data: content.resource);
+    }
+    return McpContent(type: 'unknown');
   }
 }
 
-/// MCP Client for Streamable HTTP transport
+/// MCP Client Service using the mcp_dart library
 class McpClientService {
-  final Dio _dio;
   final String serverUrl;
   final Map<String, String>? headers;
-  String? _protocolVersion;
-  String? _sessionId;
+
+  McpClient? _client;
+  StreamableHttpClientTransport? _transport;
 
   /// Callback for handling sampling requests from the server
   Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
   onSamplingRequest;
 
   /// Callback for handling elicitation requests from the server
-  /// Should call sendElicitationComplete when user responds
   Future<void> Function(
-    ElicitationRequest request,
+    app_elicitation.ElicitationRequest request,
     Future<void> Function(
       String elicitationId,
-      ElicitationAction action,
+      app_elicitation.ElicitationAction action,
       Map<String, dynamic>? content,
     )
     sendComplete,
   )?
   onElicitationRequest;
 
-  McpClientService({required this.serverUrl, this.headers})
-    : _dio = Dio(
-        BaseOptions(
-          headers: headers?.map(
-            (key, value) => MapEntry(key, value as dynamic),
-          ),
-          // No timeout - allow infinite wait for elicitation responses
-          connectTimeout: null,
-          receiveTimeout: null,
-        ),
-      );
+  /// Completer for pending elicitation responses
+  Completer<ElicitResult>? _pendingElicitationCompleter;
+
+  McpClientService({required this.serverUrl, this.headers});
 
   /// Initialize connection to the MCP server
   Future<void> initialize() async {
     try {
-      final response = await _dio.post(
-        serverUrl,
-        data: {
-          'jsonrpc': '2.0',
-          'id': 1,
-          'method': 'initialize',
-          'params': {
-            'protocolVersion': '2024-11-05',
-            'capabilities': {
-              'tools': {},
-              'sampling': {},
-              'elicitation': {'form': {}, 'url': {}},
-            },
-            'clientInfo': {
-              'name': 'joey-mcp-client-flutter',
-              'version': '1.0.0',
-            },
-          },
-        },
-        options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream',
-          },
+      // Build request init options with headers if provided
+      Map<String, dynamic>? requestInit;
+      if (headers != null && headers!.isNotEmpty) {
+        requestInit = {'headers': headers};
+      }
+
+      // Create the HTTP transport with headers
+      final uri = Uri.parse(serverUrl);
+      _transport = StreamableHttpClientTransport(
+        uri,
+        opts: StreamableHttpClientTransportOptions(requestInit: requestInit),
+      );
+
+      // Create the MCP client with our app info
+      _client = McpClient(
+        Implementation(name: 'joey-mcp-client-flutter', version: '1.0.0'),
+        options: McpClientOptions(
+          capabilities: ClientCapabilities(
+            sampling: ClientCapabilitiesSampling(),
+            roots: ClientCapabilitiesRoots(listChanged: true),
+            elicitation: ClientElicitation(
+              form: ClientElicitationForm(applyDefaults: true),
+              url: ClientElicitationUrl(),
+            ),
+          ),
         ),
       );
 
-      print('MCP initialize response: ${response.data}');
+      // Set up the sampling handler before connecting
+      _client!.onSamplingRequest = _handleSamplingRequest;
 
-      // Parse SSE response
-      final data = _parseSSEResponse(response.data);
+      // Set up the elicitation handler before connecting
+      _client!.onElicitRequest = _handleElicitRequest;
 
-      if (data['error'] != null) {
-        throw Exception('MCP initialization error: ${data['error']}');
-      }
+      // Connect to the server
+      await _client!.connect(_transport!);
 
-      // Store the negotiated protocol version
-      _protocolVersion = data['result']?['protocolVersion'];
-
-      // Extract session ID from response headers if present
-      _sessionId = response.headers.value('mcp-session-id');
-
+      final serverVersion = _client!.getServerVersion();
+      print('MCP: Connected to server at $serverUrl');
       print(
-        'MCP initialize parsed successfully: ${data['result']?['serverInfo']?['name']}',
+        'MCP: Server info: ${serverVersion?.name} v${serverVersion?.version}',
       );
-      print('MCP protocol version: $_protocolVersion');
-      print('MCP session ID: $_sessionId');
-
-      // Send initialized notification (required by MCP protocol)
-      // Must include MCP-Protocol-Version and MCP-Session-Id headers for HTTP transport
-      try {
-        final notificationResponse = await _dio.post(
-          serverUrl,
-          data: {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
-          options: Options(headers: _buildRequestHeaders()),
-        );
-        print('MCP initialized notification sent successfully');
-        print(
-          'MCP initialized notification response: ${notificationResponse.data}',
-        );
-      } catch (notificationError) {
-        if (notificationError is DioException &&
-            notificationError.response != null) {
-          print(
-            'MCP initialized notification error response: ${notificationError.response?.data}',
-          );
-          print(
-            'MCP initialized notification error status: ${notificationError.response?.statusCode}',
-          );
-        }
-        throw Exception(
-          'Failed to send initialized notification: $notificationError',
-        );
-      }
     } catch (e) {
-      if (e is DioException && e.response != null) {
-        print('MCP initialize error response body: ${e.response?.data}');
-      }
-      print('MCP initialize exception: $e');
+      print('MCP: Failed to initialize: $e');
       throw Exception('Failed to initialize MCP server: $e');
     }
   }
 
-  /// Build headers for subsequent requests (after initialization)
-  Map<String, dynamic> _buildRequestHeaders() {
-    final headers = <String, dynamic>{
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream',
+  /// Handle sampling request from the server
+  Future<CreateMessageResult> _handleSamplingRequest(
+    CreateMessageRequest request,
+  ) async {
+    if (onSamplingRequest == null) {
+      throw McpError(
+        ErrorCode.internalError.value,
+        'No sampling request handler registered',
+      );
+    }
+
+    // Convert to the format expected by our callback
+    final requestMap = {
+      'method': 'sampling/createMessage',
+      'params': {
+        'messages': request.messages
+            .map(
+              (m) => {'role': m.role.name, 'content': _contentToMap(m.content)},
+            )
+            .toList(),
+        'systemPrompt': request.systemPrompt,
+        'maxTokens': request.maxTokens,
+        if (request.modelPreferences != null)
+          'modelPreferences': {
+            if (request.modelPreferences!.hints != null)
+              'hints': request.modelPreferences!.hints!
+                  .map((h) => {'name': h.name})
+                  .toList(),
+          },
+      },
     };
 
-    if (_protocolVersion != null) {
-      headers['MCP-Protocol-Version'] = _protocolVersion!;
-    }
+    try {
+      final response = await onSamplingRequest!(requestMap);
 
-    if (_sessionId != null) {
-      headers['MCP-Session-Id'] = _sessionId!;
-    }
+      // Convert response back to mcp_dart format
+      final role = response['role'] as String;
+      final content = response['content'];
+      final model = response['model'] as String;
+      final stopReason = response['stopReason'] as String?;
 
-    return headers;
+      Content responseContent;
+      if (content is Map<String, dynamic>) {
+        final type = content['type'] as String?;
+        if (type == 'text') {
+          responseContent = TextContent(text: content['text'] as String);
+        } else {
+          responseContent = TextContent(text: content.toString());
+        }
+      } else if (content is String) {
+        responseContent = TextContent(text: content);
+      } else if (content is List) {
+        // Handle array of content blocks
+        final textParts = content
+            .whereType<Map<String, dynamic>>()
+            .where((c) => c['type'] == 'text')
+            .map((c) => c['text'] as String)
+            .toList();
+        responseContent = TextContent(text: textParts.join('\n'));
+      } else {
+        responseContent = TextContent(text: '');
+      }
+
+      return CreateMessageResult(
+        role: role == 'assistant'
+            ? SamplingMessageRole.assistant
+            : SamplingMessageRole.user,
+        content: SamplingTextContent(
+          text: (responseContent as TextContent).text,
+        ),
+        model: model,
+        stopReason: stopReason,
+      );
+    } catch (e) {
+      throw McpError(
+        ErrorCode.internalError.value,
+        'Sampling request failed: $e',
+      );
+    }
   }
 
-  /// Parse Server-Sent Events (SSE) response format
-  Map<String, dynamic> _parseSSEResponse(dynamic responseData) {
-    if (responseData is Map) {
-      return responseData as Map<String, dynamic>;
+  /// Convert Content to a map representation
+  /// Handles both regular Content types and SamplingContent types
+  Map<String, dynamic> _contentToMap(dynamic content) {
+    // Handle SamplingContent types (used in sampling messages)
+    if (content is SamplingTextContent) {
+      return {'type': 'text', 'text': content.text};
+    } else if (content is SamplingImageContent) {
+      return {
+        'type': 'image',
+        'data': content.data,
+        'mimeType': content.mimeType,
+      };
+    }
+    // Handle regular Content types
+    if (content is TextContent) {
+      return {'type': 'text', 'text': content.text};
+    } else if (content is ImageContent) {
+      return {
+        'type': 'image',
+        'data': content.data,
+        'mimeType': content.mimeType,
+      };
+    }
+    return {'type': 'unknown'};
+  }
+
+  /// Handle elicitation request from the server
+  Future<ElicitResult> _handleElicitRequest(ElicitRequest request) async {
+    // Log the raw elicitation request for debugging
+    print('MCP: Received elicitation request:');
+    print('  mode: ${request.mode}');
+    print('  isUrlMode: ${request.isUrlMode}');
+    print('  isFormMode: ${request.isFormMode}');
+    print('  message: ${request.message}');
+    print('  url: ${request.url}');
+    print('  elicitationId: ${request.elicitationId}');
+    print('  requestedSchema: ${request.requestedSchema?.toJson()}');
+
+    if (onElicitationRequest == null) {
+      throw McpError(
+        ErrorCode.internalError.value,
+        'No elicitation request handler registered',
+      );
     }
 
-    // Parse SSE format: extract JSON from "data: {json}" line
-    final String text = responseData.toString();
-    final lines = text.split('\n');
+    // Create a completer to wait for user response
+    _pendingElicitationCompleter = Completer<ElicitResult>();
 
-    for (final line in lines) {
-      if (line.startsWith('data: ')) {
-        final jsonStr = line.substring(6); // Remove "data: " prefix
-        return jsonDecode(jsonStr) as Map<String, dynamic>;
+    // Convert to app's elicitation format
+    final appRequest = app_elicitation.ElicitationRequest(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      mode: request.isUrlMode
+          ? app_elicitation.ElicitationMode.url
+          : app_elicitation.ElicitationMode.form,
+      message: request.message,
+      elicitationId: request.elicitationId,
+      url: request.url,
+      requestedSchema: request.requestedSchema?.toJson(),
+    );
+
+    // Call the handler with a callback to complete the elicitation
+    await onElicitationRequest!(appRequest, (
+      elicitationId,
+      action,
+      content,
+    ) async {
+      // Convert action to mcp_dart format
+      String mcpAction;
+      switch (action) {
+        case app_elicitation.ElicitationAction.accept:
+          mcpAction = 'accept';
+          break;
+        case app_elicitation.ElicitationAction.decline:
+          mcpAction = 'decline';
+          break;
+        case app_elicitation.ElicitationAction.cancel:
+          mcpAction = 'cancel';
+          break;
       }
-    }
 
-    throw Exception('Could not parse SSE response: $text');
+      _pendingElicitationCompleter?.complete(
+        ElicitResult(
+          action: mcpAction,
+          content: content,
+          elicitationId: elicitationId.isNotEmpty ? elicitationId : null,
+        ),
+      );
+    });
+
+    return await _pendingElicitationCompleter!.future;
   }
 
   /// List available tools from the MCP server
   Future<List<McpTool>> listTools() async {
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
+
     try {
-      final response = await _dio.post(
-        serverUrl,
-        data: {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}},
-        options: Options(headers: _buildRequestHeaders()),
-      );
-
-      final data = _parseSSEResponse(response.data);
-
-      if (data['error'] != null) {
-        throw Exception('MCP tools/list error: ${data['error']}');
-      }
-
-      final tools = data['result']['tools'] as List;
-      return tools.map((t) => McpTool.fromJson(t)).toList();
+      final result = await _client!.listTools();
+      return result.tools.map((t) => McpTool.fromMcpDartTool(t)).toList();
     } catch (e) {
-      if (e is DioException && e.response != null) {
-        print('MCP listTools error response body: ${e.response?.data}');
-      }
+      print('MCP: Failed to list tools: $e');
       throw Exception('Failed to list tools: $e');
     }
   }
@@ -257,293 +341,56 @@ class McpClientService {
     String toolName,
     Map<String, dynamic> arguments,
   ) async {
-    try {
-      final requestId = DateTime.now().millisecondsSinceEpoch;
-      print('MCP: Calling tool $toolName with request ID $requestId');
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
 
-      final response = await _dio.post(
-        serverUrl,
-        data: {
-          'jsonrpc': '2.0',
-          'id': requestId,
-          'method': 'tools/call',
-          'params': {'name': toolName, 'arguments': arguments},
-        },
-        options: Options(
-          headers: _buildRequestHeaders(),
-          responseType: ResponseType.stream, // Stream for SSE support
-        ),
+    try {
+      print('MCP: Calling tool $toolName with arguments: $arguments');
+
+      final result = await _client!.callTool(
+        CallToolRequest(name: toolName, arguments: arguments),
       );
 
-      final contentType = response.headers.value('content-type');
-      print('MCP: Response content-type: $contentType');
+      print('MCP: Tool $toolName completed, isError: ${result.isError}');
 
-      // Check if response is SSE stream
-      if (contentType?.contains('text/event-stream') ?? false) {
-        print('MCP: Processing SSE stream');
-        // Parse SSE stream - may contain sampling requests before final response
-        return await _parseSSEStreamReal(response.data.stream, requestId);
-      } else {
-        print('MCP: Processing single JSON response');
-        // Read the stream as a single response
-        final chunks = await response.data.stream.toList();
-        final bytes = chunks.expand((x) => x).toList();
-        final responseBody = utf8.decode(bytes);
-        final data = _parseSSEResponse(responseBody);
-
-        if (data['error'] != null) {
-          final errorData = data['error'] as Map<String, dynamic>;
-          final errorCode = errorData['code'] as int?;
-
-          // Check for URLElicitationRequiredError
-          if (errorCode == -32042) {
-            throw URLElicitationRequiredError.fromJson(errorData);
-          }
-
-          throw Exception('MCP tools/call error: ${data['error']}');
-        }
-
-        return McpToolResult.fromJson(data['result']);
-      }
+      return McpToolResult.fromMcpDartResult(result);
     } catch (e) {
-      if (e is DioException && e.response != null) {
-        print('MCP callTool error response body: ${e.response?.data}');
+      print('MCP: Failed to call tool $toolName: $e');
+
+      // Check if this is an MCP error that we should handle specially
+      if (e is McpError) {
+        // Return error as a tool result
+        return McpToolResult(
+          content: [McpContent(type: 'text', text: 'Error: ${e.message}')],
+          isError: true,
+        );
       }
-      print('MCP callTool exception: $e');
+
       throw Exception('Failed to call tool $toolName: $e');
     }
-  }
-
-  /// Parse a real SSE stream (ResponseType.stream)
-  Future<McpToolResult> _parseSSEStreamReal(
-    Stream<List<int>> stream,
-    int requestId,
-  ) async {
-    print('MCP: Starting to process SSE stream');
-    Map<String, dynamic>? finalResponse;
-    final buffer = StringBuffer();
-
-    await for (final chunk in stream) {
-      final text = utf8.decode(chunk);
-      buffer.write(text);
-      print('MCP: Received chunk: $text');
-
-      // Process complete lines
-      final lines = buffer.toString().split('\n');
-      // Keep the last partial line in the buffer
-      buffer.clear();
-      if (lines.isNotEmpty && !lines.last.contains('\n')) {
-        buffer.write(lines.last);
-        lines.removeLast();
-      }
-
-      for (final line in lines) {
-        if (!line.startsWith('data: ')) continue;
-
-        final jsonStr = line.substring(6).trim();
-        if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
-
-        try {
-          print('MCP: Parsing JSON: $jsonStr');
-          final message = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-          // Check if this is a request from the server (e.g., sampling)
-          if (message['method'] != null && message['id'] != null) {
-            print(
-              'MCP: Received server request: ${message['method']} with ID: ${message['id']}',
-            );
-
-            if (message['method'] == 'sampling/createMessage') {
-              // Handle sampling request
-              print('MCP: Handling sampling request...');
-              try {
-                final samplingResponse = await handleSamplingRequest(message);
-                print('MCP: Sampling response received: $samplingResponse');
-
-                // Send response back to server
-                await _sendResponse(message['id'], samplingResponse);
-                print('MCP: Sampling response sent to server');
-              } catch (e) {
-                print('MCP: Sampling request failed: $e');
-                // Send error response
-                await _sendErrorResponse(
-                  message['id'],
-                  -1,
-                  'Sampling request failed: $e',
-                );
-              }
-            } else if (message['method'] == 'elicitation/create') {
-              // Handle elicitation request
-              print('MCP: Handling elicitation request...');
-              try {
-                final elicitationRequest = ElicitationRequest.fromJson(message);
-
-                // Handle the request asynchronously (will send notification when complete)
-                handleElicitationRequest(elicitationRequest);
-              } catch (e) {
-                print('MCP: Elicitation request failed: $e');
-                // Send error response
-                await _sendErrorResponse(
-                  message['id'],
-                  -32603,
-                  'Elicitation request failed: $e',
-                );
-              }
-            } else {
-              print(
-                'MCP: Unhandled server request method: ${message['method']}',
-              );
-            }
-          }
-          // Check if this is a notification from the server
-          else if (message['method'] != null && message['id'] == null) {
-            print('MCP: Received notification: ${message['method']}');
-
-            if (message['method'] == 'notifications/elicitation/complete') {
-              final params = message['params'] as Map<String, dynamic>?;
-              final elicitationId = params?['elicitationId'] as String?;
-              print('MCP: Elicitation completed: $elicitationId');
-              // Note: We don't do anything with this notification currently
-              // but clients could use it to retry requests or update UI
-            }
-          }
-          // Check if this is the response to our original request
-          else if (message['id'] == requestId && message['result'] != null) {
-            print('MCP: Received final response for request ID $requestId');
-            finalResponse = message;
-            break; // Exit the stream processing
-          }
-          // Handle errors
-          else if (message['id'] == requestId && message['error'] != null) {
-            print(
-              'MCP: Received error for request ID $requestId: ${message['error']}',
-            );
-            final errorData = message['error'] as Map<String, dynamic>;
-            final errorCode = errorData['code'] as int?;
-
-            // Check for URLElicitationRequiredError
-            if (errorCode == -32042) {
-              throw URLElicitationRequiredError.fromJson(errorData);
-            }
-
-            throw Exception('MCP tools/call error: ${message['error']}');
-          }
-        } catch (e) {
-          print('MCP: Failed to parse SSE line "$line": $e');
-        }
-      }
-
-      // If we got the final response, break out of the stream
-      if (finalResponse != null) {
-        break;
-      }
-    }
-
-    if (finalResponse == null) {
-      print('MCP: ERROR - No final response received in SSE stream!');
-      throw Exception('No response received in SSE stream');
-    }
-
-    print('MCP: Returning final tool result');
-    return McpToolResult.fromJson(finalResponse['result']);
-  }
-
-  /// Send a response back to the server
-  Future<void> _sendResponse(
-    dynamic messageId,
-    Map<String, dynamic> result,
-  ) async {
-    try {
-      final payload = {'jsonrpc': '2.0', 'id': messageId, 'result': result};
-      print('MCP: Sending response for ID $messageId: ${jsonEncode(payload)}');
-      await _dio.post(
-        serverUrl,
-        data: payload,
-        options: Options(headers: _buildRequestHeaders()),
-      );
-    } catch (e) {
-      print('MCP: Failed to send response: $e');
-    }
-  }
-
-  /// Send an error response back to the server
-  Future<void> _sendErrorResponse(
-    dynamic messageId,
-    int code,
-    String message,
-  ) async {
-    try {
-      final payload = {
-        'jsonrpc': '2.0',
-        'id': messageId,
-        'error': {'code': code, 'message': message},
-      };
-      print('MCP: Sending error for ID $messageId: ${jsonEncode(payload)}');
-      await _dio.post(
-        serverUrl,
-        data: payload,
-        options: Options(headers: _buildRequestHeaders()),
-      );
-    } catch (e) {
-      print('MCP: Failed to send error response: $e');
-    }
-  }
-
-  /// Handle incoming sampling request from server
-  Future<Map<String, dynamic>> handleSamplingRequest(
-    Map<String, dynamic> request,
-  ) async {
-    if (onSamplingRequest == null) {
-      throw Exception('No sampling request handler registered');
-    }
-
-    return await onSamplingRequest!(request);
-  }
-
-  /// Handle incoming elicitation request from server
-  Future<void> handleElicitationRequest(ElicitationRequest request) async {
-    if (onElicitationRequest == null) {
-      throw Exception('No elicitation request handler registered');
-    }
-
-    // Call handler with sendComplete callback
-    await onElicitationRequest!(request, sendElicitationComplete);
   }
 
   /// Send elicitation complete notification to the server
   Future<void> sendElicitationComplete(
     String elicitationId,
-    ElicitationAction action,
+    app_elicitation.ElicitationAction action,
     Map<String, dynamic>? content,
   ) async {
-    try {
-      final params = <String, dynamic>{
-        'elicitationId': elicitationId,
-        'action': action.toJson(),
-      };
-
-      if (content != null && content.isNotEmpty) {
-        params['content'] = content;
-      }
-
-      await _dio.post(
-        serverUrl,
-        data: {
-          'jsonrpc': '2.0',
-          'method': 'notifications/elicitation/complete',
-          'params': params,
-        },
-        options: Options(headers: _buildRequestHeaders()),
-      );
-      print('MCP: Elicitation complete notification sent: $elicitationId');
-    } catch (e) {
-      print('MCP: Failed to send elicitation complete notification: $e');
-      rethrow;
-    }
+    // With mcp_dart, elicitation is handled through the request/response pattern
+    // The response is sent automatically when the handler completes
+    // This method is kept for backward compatibility but is a no-op
+    print('MCP: Elicitation complete: $elicitationId, action: ${action.name}');
   }
 
-  /// Close the connection (for cleanup)
-  void close() {
-    _dio.close();
+  /// Close the connection
+  Future<void> close() async {
+    try {
+      await _client?.close();
+      await _transport?.close();
+      print('MCP: Connection closed');
+    } catch (e) {
+      print('MCP: Error closing connection: $e');
+    }
   }
 }
