@@ -17,6 +17,7 @@ import '../widgets/message_bubble.dart';
 import '../widgets/sampling_request_dialog.dart';
 import '../widgets/elicitation_url_card.dart';
 import '../widgets/elicitation_form_card.dart';
+import '../widgets/thinking_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -124,8 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
 
     // Navigate to auth screen - replace entire navigation stack
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
   }
 
   void _scrollToBottom() {
@@ -461,10 +461,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final response = request.toResponseJson(
-      action: action,
-      content: content,
-    );
+    final response = request.toResponseJson(action: action, content: content);
     responder(response);
 
     // Mark as responded
@@ -522,10 +519,7 @@ class _ChatScreenState extends State<ChatScreen> {
               const SizedBox(height: 12),
               Text(
                 'Your OpenRouter session has expired. Please sign in again to continue chatting.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade800,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade800),
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -551,7 +545,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _deleteMessage(String messageId, ConversationProvider provider) async {
+  Future<void> _deleteMessage(
+    String messageId,
+    ConversationProvider provider,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -578,7 +575,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _editMessage(Message message, ConversationProvider provider) async {
+  Future<void> _editMessage(
+    Message message,
+    ConversationProvider provider,
+  ) async {
     final controller = TextEditingController(text: message.content);
 
     final result = await showDialog<String>(
@@ -766,10 +766,12 @@ class _ChatScreenState extends State<ChatScreen> {
                       // Always show user messages
                       if (msg.role == MessageRole.user) return true;
 
-                      // Hide tool role messages when thinking is disabled
-                      // Show them when thinking is enabled for transparency
+                      // Always show elicitation messages
+                      if (msg.role == MessageRole.elicitation) return true;
+
+                      // Show tool role messages (as indicators when thinking disabled)
                       if (msg.role == MessageRole.tool) {
-                        return _showThinking;
+                        return true;
                       }
 
                       // Hide empty assistant messages without tool calls or reasoning
@@ -780,11 +782,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         return false;
                       }
 
-                      // Hide assistant messages with tool calls when thinking is disabled
+                      // Show assistant messages with tool calls (as indicators when thinking disabled)
                       if (msg.role == MessageRole.assistant &&
-                          msg.toolCallData != null &&
-                          !_showThinking) {
-                        return false;
+                          msg.toolCallData != null) {
+                        return true;
                       }
 
                       return true;
@@ -894,7 +895,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
 
                         // Format tool result messages
-                        if (message.role == MessageRole.tool && _showThinking) {
+                        if (message.role == MessageRole.tool) {
+                          // Show minimal indicator when thinking is disabled
+                          if (!_showThinking) {
+                            return ThinkingIndicator(message: message);
+                          }
                           // Check if this is an error result
                           final isError =
                               message.content.startsWith(
@@ -913,15 +918,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: formattedMessage,
                             showThinking: _showThinking,
-                            onDelete: () => _deleteMessage(formattedMessage.id, provider),
+                            onDelete: () =>
+                                _deleteMessage(formattedMessage.id, provider),
                             onEdit: null, // Tool messages can't be edited
                           );
                         }
 
                         // Format assistant messages with tool calls
                         if (message.role == MessageRole.assistant &&
-                            message.toolCallData != null &&
-                            _showThinking) {
+                            message.toolCallData != null) {
+                          // Show minimal indicator when thinking is disabled
+                          if (!_showThinking) {
+                            return ThinkingIndicator(message: message);
+                          }
+
                           // Build tool call display content
                           String toolCallContent = '';
 
@@ -1000,14 +1010,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: formattedMessage,
                             showThinking: _showThinking,
-                            onDelete: () => _deleteMessage(formattedMessage.id, provider),
+                            onDelete: () =>
+                                _deleteMessage(formattedMessage.id, provider),
                             onEdit: null, // Tool call messages can't be edited
                           );
-                        } else if (message.role == MessageRole.assistant &&
-                            message.toolCallData != null &&
-                            !_showThinking) {
-                          // Hide thinking messages when thinking is disabled
-                          return const SizedBox.shrink();
                         }
 
                         return MessageBubble(

@@ -1,0 +1,103 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import '../models/message.dart';
+
+/// A minimal left-aligned indicator for thinking/tool messages
+/// when full thinking display is disabled.
+class ThinkingIndicator extends StatelessWidget {
+  final Message message;
+
+  const ThinkingIndicator({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final indicators = _getIndicators();
+    if (indicators.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 6,
+        children: indicators.map((indicator) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Icon(indicator.icon, size: 14, color: Colors.grey[500]),
+              const SizedBox(width: 6),
+              Text(
+                indicator.text,
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  List<_IndicatorData> _getIndicators() {
+    final indicators = <_IndicatorData>[];
+
+    // Tool result message
+    if (message.role == MessageRole.tool) {
+      final toolName = message.toolName ?? 'tool';
+      final isError =
+          message.content.startsWith('Failed to parse tool arguments') ||
+          message.content.startsWith('Error executing tool') ||
+          message.content.startsWith('Tool not found') ||
+          message.content.startsWith('MCP error');
+      indicators.add(
+        _IndicatorData(
+          icon: isError ? Icons.error_outline : Icons.check_circle_outline,
+          text: isError ? 'Error from $toolName' : 'Result from $toolName',
+        ),
+      );
+      return indicators;
+    }
+
+    // Assistant message - check for reasoning first
+    if (message.role == MessageRole.assistant &&
+        message.reasoning != null &&
+        message.reasoning!.isNotEmpty) {
+      indicators.add(
+        _IndicatorData(icon: Icons.psychology_outlined, text: 'Thinking...'),
+      );
+    }
+
+    // Assistant message with tool calls
+    if (message.role == MessageRole.assistant && message.toolCallData != null) {
+      try {
+        final toolCalls = jsonDecode(message.toolCallData!) as List;
+        if (toolCalls.isNotEmpty) {
+          final toolNames = toolCalls
+              .map((tc) => tc['function']['name'] as String)
+              .toList();
+          final text = toolNames.length == 1
+              ? 'Calling ${toolNames.first}'
+              : 'Calling ${toolNames.length} tools';
+          indicators.add(
+            _IndicatorData(icon: Icons.build_outlined, text: text),
+          );
+        }
+      } catch (e) {
+        indicators.add(
+          _IndicatorData(icon: Icons.build_outlined, text: 'Calling tool'),
+        );
+      }
+    }
+
+    return indicators;
+  }
+}
+
+class _IndicatorData {
+  final IconData icon;
+  final String text;
+
+  _IndicatorData({required this.icon, required this.text});
+}
