@@ -58,6 +58,7 @@ dependencies:
 
   # MCP Client
   mcp_dart: ^1.2.2
+  adaptive_dialog: ^2.6.0
 
 dev_dependencies:
   flutter_test:

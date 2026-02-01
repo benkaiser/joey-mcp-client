@@ -1,3 +1,4 @@
+import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversation_provider.dart';
@@ -68,20 +69,45 @@ class ConversationListScreen extends StatelessWidget {
             itemCount: conversations.length,
             itemBuilder: (context, index) {
               final conversation = conversations[index];
-              return _ConversationListItem(
-                conversation: conversation,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          ChatScreen(conversation: conversation),
-                    ),
-                  );
+              return Dismissible(
+                key: Key(conversation.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  color: Colors.red,
+                  child: const Icon(Icons.delete, color: Colors.white),
+                ),
+                onDismissed: (direction) {
+                  provider.deleteConversation(conversation.id);
                 },
-                onDelete: () {
-                  _showDeleteDialog(context, provider, conversation);
-                },
+                child: _ConversationListItem(
+                  conversation: conversation,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ChatScreen(conversation: conversation),
+                      ),
+                    );
+                  },
+                  onLongPress: () async {
+                    final result = await showModalActionSheet<String>(
+                      context: context,
+                      actions: [
+                        const SheetAction(
+                          key: 'delete',
+                          label: 'Delete',
+                          isDestructiveAction: true,
+                        ),
+                      ],
+                    );
+                    if (result == 'delete') {
+                      provider.deleteConversation(conversation.id);
+                    }
+                  },
+                ),
               );
             },
           );
@@ -149,49 +175,17 @@ class ConversationListScreen extends StatelessWidget {
       ),
     );
   }
-
-  void _showDeleteDialog(
-    BuildContext context,
-    ConversationProvider provider,
-    Conversation conversation,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Conversation'),
-        content: Text(
-          'Are you sure you want to delete "${conversation.title}"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await provider.deleteConversation(conversation.id);
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ConversationListItem extends StatelessWidget {
   final Conversation conversation;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback onLongPress;
 
   const _ConversationListItem({
     required this.conversation,
     required this.onTap,
-    required this.onDelete,
+    required this.onLongPress,
   });
 
   @override
@@ -223,12 +217,8 @@ class _ConversationListItem extends StatelessWidget {
           ),
         ],
       ),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        onPressed: onDelete,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
       onTap: onTap,
+      onLongPress: onLongPress,
     );
   }
 }
