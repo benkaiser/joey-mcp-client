@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
 
@@ -221,6 +222,14 @@ class MessageBubble extends StatelessWidget {
                                       decoration: TextDecoration.underline,
                                     ),
                                   ),
+                                  onTapLink: (text, href, title) {
+                                    if (href != null) {
+                                      launchUrl(
+                                        Uri.parse(href),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    }
+                                  },
                                 ),
                               if (isStreaming) ...[
                                 const SizedBox(height: 4),
