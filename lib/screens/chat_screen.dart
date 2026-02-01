@@ -663,14 +663,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  conversation.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            title: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () => _showRenameDialog(conversation.title),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      conversation.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                 Row(
                   children: [
                     Flexible(
@@ -717,6 +721,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
+              ),
+            ),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             actions: [
               IconButton(
@@ -731,8 +737,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () => _showRenameDialog(conversation.title),
+                icon: const Icon(Icons.note_add),
+                tooltip: 'Start new conversation',
+                onPressed: () => _startNewConversation(),
               ),
             ],
           ),
@@ -1173,6 +1180,40 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       // Silently fail - title generation is not critical
+    }
+  }
+
+  Future<void> _startNewConversation() async {
+    final provider = context.read<ConversationProvider>();
+
+    // Create a new conversation with the same model as the current one
+    final newConversation = await provider.createConversation(
+      model: widget.conversation.model,
+    );
+
+    // Copy MCP servers from current conversation to new conversation
+    if (_mcpServers.isNotEmpty) {
+      final serverIds = _mcpServers.map((s) => s.id).toList();
+      await DatabaseService.instance.setConversationMcpServers(
+        newConversation.id,
+        serverIds,
+      );
+    }
+
+    if (mounted) {
+      // Replace current chat screen with the new conversation
+      // Use fade transition to indicate this is a replacement, not forward navigation
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              ChatScreen(conversation: newConversation),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: const Duration(milliseconds: 200),
+        ),
+      );
     }
   }
 
