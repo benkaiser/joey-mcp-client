@@ -44,8 +44,8 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _currentToolName;
   bool _isToolExecuting = false; // true = calling, false = called
   bool _authenticationRequired = false;
-  ElicitationRequest? _pendingElicitation;
-  Function(Map<String, dynamic>)? _elicitationResponder;
+  // Map of elicitation message IDs to their responder callbacks
+  final Map<String, Function(Map<String, dynamic>)> _elicitationResponders = {};
   // Track responded elicitations to prevent duplicate sends
   final Set<String> _respondedElicitationIds = {};
 
@@ -186,8 +186,6 @@ class _ChatScreenState extends State<ChatScreen> {
         _isLoading = true;
         _streamingContent = '';
         _authenticationRequired = false; // Reset auth flag on new message
-        _pendingElicitation = null; // Clear previous elicitations
-        _elicitationResponder = null;
         _respondedElicitationIds
             .clear(); // Clear responded IDs for new conversation turn
       });
@@ -325,10 +323,28 @@ class _ChatScreenState extends State<ChatScreen> {
     } else if (event is SamplingRequestReceived) {
       _showSamplingRequestDialog(event);
     } else if (event is ElicitationRequestReceived) {
-      setState(() {
-        _pendingElicitation = event.request;
-        _elicitationResponder = event.onRespond;
-      });
+      // Create an elicitation message that will be displayed inline
+      final elicitationMessage = Message(
+        id: const Uuid().v4(),
+        conversationId: widget.conversation.id,
+        role: MessageRole.elicitation,
+        content: event.request.message,
+        timestamp: DateTime.now(),
+        elicitationData: jsonEncode({
+          'id': event.request.id,
+          'mode': event.request.mode.toJson(),
+          'message': event.request.message,
+          'elicitationId': event.request.elicitationId,
+          'url': event.request.url,
+          'requestedSchema': event.request.requestedSchema,
+        }),
+      );
+
+      // Store the responder callback keyed by message ID
+      _elicitationResponders[elicitationMessage.id] = event.onRespond;
+
+      // Add message to provider
+      provider.addMessage(elicitationMessage);
       _scrollToBottom();
     } else if (event is AuthenticationRequired) {
       // Handle auth error by showing a message in the chat
@@ -388,10 +404,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Handle URL mode elicitation response
-  Future<void> _handleUrlElicitationResponse(ElicitationAction action) async {
-    if (_elicitationResponder == null) return;
+  Future<void> _handleUrlElicitationResponse(
+    String messageId,
+    ElicitationRequest request,
+    ElicitationAction action,
+  ) async {
+    final responder = _elicitationResponders[messageId];
+    if (responder == null) return;
 
-    final elicitationId = _pendingElicitation?.elicitationId ?? '';
+    final elicitationId = request.elicitationId ?? messageId;
 
     // Check if we've already responded to this elicitation
     if (_respondedElicitationIds.contains(elicitationId)) {
@@ -399,24 +420,40 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final response = _pendingElicitation!.toResponseJson(action: action);
-    _elicitationResponder!(response);
+    final response = request.toResponseJson(action: action);
+    responder(response);
 
-    // Mark as responded but keep the card visible
+    // Mark as responded
     setState(() {
       _respondedElicitationIds.add(elicitationId);
-      // Don't clear _pendingElicitation - keep the card visible
     });
+
+    // Update the message with response state
+    final provider = context.read<ConversationProvider>();
+    final messages = provider.getMessages(widget.conversation.id);
+    final messageIndex = messages.indexWhere((m) => m.id == messageId);
+    if (messageIndex != -1) {
+      final message = messages[messageIndex];
+      final elicitationData = jsonDecode(message.elicitationData!);
+      elicitationData['responseState'] = action.toJson();
+      final updatedMessage = message.copyWith(
+        elicitationData: jsonEncode(elicitationData),
+      );
+      await provider.updateFullMessage(updatedMessage);
+    }
   }
 
   /// Handle form mode elicitation response
   Future<void> _handleFormElicitationResponse(
+    String messageId,
+    ElicitationRequest request,
     ElicitationAction action,
     Map<String, dynamic>? content,
   ) async {
-    if (_elicitationResponder == null) return;
+    final responder = _elicitationResponders[messageId];
+    if (responder == null) return;
 
-    final elicitationId = _pendingElicitation?.elicitationId ?? '';
+    final elicitationId = request.elicitationId ?? messageId;
 
     // Check if we've already responded to this elicitation
     if (_respondedElicitationIds.contains(elicitationId)) {
@@ -424,17 +461,33 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final response = _pendingElicitation!.toResponseJson(
+    final response = request.toResponseJson(
       action: action,
       content: content,
     );
-    _elicitationResponder!(response);
+    responder(response);
 
-    // Mark as responded but keep the card visible
+    // Mark as responded
     setState(() {
       _respondedElicitationIds.add(elicitationId);
-      // Don't clear _pendingElicitation - keep the card visible
     });
+
+    // Update the message with response state and submitted content
+    final provider = context.read<ConversationProvider>();
+    final messages = provider.getMessages(widget.conversation.id);
+    final messageIndex = messages.indexWhere((m) => m.id == messageId);
+    if (messageIndex != -1) {
+      final message = messages[messageIndex];
+      final elicitationData = jsonDecode(message.elicitationData!);
+      elicitationData['responseState'] = action.toJson();
+      if (content != null) {
+        elicitationData['submittedContent'] = content;
+      }
+      final updatedMessage = message.copyWith(
+        elicitationData: jsonEncode(elicitationData),
+      );
+      await provider.updateFullMessage(updatedMessage);
+    }
   }
 
   Widget _buildAuthRequiredCard() {
@@ -746,32 +799,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   _streamingReasoning.isNotEmpty)
                               ? 1
                               : 0) +
-                          (_authenticationRequired ? 1 : 0) +
-                          (_pendingElicitation != null ? 1 : 0),
+                          (_authenticationRequired ? 1 : 0),
                       itemBuilder: (context, index) {
-                        // Show elicitation card at the end
-                        if (_pendingElicitation != null &&
-                            index ==
-                                displayMessages.length +
-                                    ((_streamingContent.isNotEmpty ||
-                                            _streamingReasoning.isNotEmpty)
-                                        ? 1
-                                        : 0) +
-                                    (_authenticationRequired ? 1 : 0)) {
-                          if (_pendingElicitation!.mode ==
-                              ElicitationMode.url) {
-                            return ElicitationUrlCard(
-                              request: _pendingElicitation!,
-                              onRespond: _handleUrlElicitationResponse,
-                            );
-                          } else {
-                            return ElicitationFormCard(
-                              request: _pendingElicitation!,
-                              onRespond: _handleFormElicitationResponse,
-                            );
-                          }
-                        }
-
                         // Show auth required card at the end
                         if (_authenticationRequired &&
                             index ==
@@ -808,11 +837,78 @@ class _ChatScreenState extends State<ChatScreen> {
 
                         final message = displayMessages[index];
 
+                        // Render elicitation messages as cards
+                        if (message.role == MessageRole.elicitation) {
+                          final elicitationData = jsonDecode(
+                            message.elicitationData!,
+                          );
+                          final request = ElicitationRequest(
+                            id: elicitationData['id'] ?? message.id,
+                            mode: ElicitationMode.fromString(
+                              elicitationData['mode'] ?? 'form',
+                            ),
+                            message: elicitationData['message'] ?? '',
+                            elicitationId: elicitationData['elicitationId'],
+                            url: elicitationData['url'],
+                            requestedSchema: elicitationData['requestedSchema'],
+                          );
+
+                          // Check if already responded
+                          final responseStateStr =
+                              elicitationData['responseState'] as String?;
+                          final responseState = responseStateStr != null
+                              ? ElicitationAction.fromString(responseStateStr)
+                              : null;
+                          final submittedContent =
+                              elicitationData['submittedContent']
+                                  as Map<String, dynamic>?;
+
+                          if (request.mode == ElicitationMode.url) {
+                            return ElicitationUrlCard(
+                              request: request,
+                              responseState: responseState,
+                              onRespond: responseState == null
+                                  ? (action) => _handleUrlElicitationResponse(
+                                      message.id,
+                                      request,
+                                      action,
+                                    )
+                                  : null,
+                            );
+                          } else {
+                            return ElicitationFormCard(
+                              request: request,
+                              responseState: responseState,
+                              submittedContent: submittedContent,
+                              onRespond: responseState == null
+                                  ? (action, content) =>
+                                        _handleFormElicitationResponse(
+                                          message.id,
+                                          request,
+                                          action,
+                                          content,
+                                        )
+                                  : null,
+                            );
+                          }
+                        }
+
                         // Format tool result messages
                         if (message.role == MessageRole.tool && _showThinking) {
+                          // Check if this is an error result
+                          final isError =
+                              message.content.startsWith(
+                                'Failed to parse tool arguments',
+                              ) ||
+                              message.content.startsWith(
+                                'Error executing tool',
+                              ) ||
+                              message.content.startsWith('Tool not found') ||
+                              message.content.startsWith('MCP error');
+                          final icon = isError ? '❌' : '✅';
                           final formattedMessage = message.copyWith(
                             content:
-                                '✅ **Result from ${message.toolName}:**\n\n${message.content}',
+                                '$icon **Result from ${message.toolName}:**\n\n${message.content}',
                           );
                           return MessageBubble(
                             message: formattedMessage,
@@ -866,8 +962,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                       '\n\nArguments:\n```json\n$prettyArgs\n```';
                                 }
                               } catch (e) {
+                                // Show the raw arguments when parsing fails
                                 toolCallContent +=
-                                    '\n\nArguments: (failed to parse)';
+                                    '\n\nArguments (failed to parse):\n```\n$toolArgsStr\n```';
                               }
                             }
                           } catch (e) {

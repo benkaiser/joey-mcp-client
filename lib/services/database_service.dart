@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -50,6 +50,7 @@ class DatabaseService {
         toolCallData TEXT,
         toolCallId TEXT,
         toolName TEXT,
+        elicitationData TEXT,
         FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
       )
     ''');
@@ -172,6 +173,12 @@ class DatabaseService {
       // Add reasoning column to messages table
       await db.execute('''
         ALTER TABLE messages ADD COLUMN reasoning TEXT
+      ''');
+    }
+    if (oldVersion < 8) {
+      // Add elicitationData column to messages table for inline elicitation cards
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN elicitationData TEXT
       ''');
     }
   }

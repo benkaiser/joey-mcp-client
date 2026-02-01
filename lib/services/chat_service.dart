@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import '../models/elicitation.dart';
-import '../models/url_elicitation_error.dart';
 import 'openrouter_service.dart';
 import 'mcp_client_service.dart';
 import 'default_model_service.dart';
@@ -129,8 +128,7 @@ class ChatService {
           final actionStr = result['action'] as String;
           final action = ElicitationAction.fromString(actionStr);
           final content = result['content'] as Map<String, dynamic>?;
-          // Use the request's elicitationId if provided, otherwise use the request ID
-          final elicitationId = request.elicitationId ?? request.id;
+          final elicitationId = request.elicitationId ?? '';
 
           // Send notification to server
           await sendComplete(elicitationId, action, content);
@@ -363,18 +361,14 @@ class ChatService {
 
             // Continue to next iteration
             continue;
-          } on URLElicitationRequiredError catch (e) {
-            // For sampling requests, we can't handle elicitations mid-request
-            // Return an error message instead
-            print(
-              'ChatService: URLElicitationRequiredError in sampling: ${e.message}',
-            );
+          } catch (e) {
+            // Handle any errors during tool execution
+            print('ChatService: Error during tool execution: $e');
             return {
               'role': 'assistant',
               'content': {
                 'type': 'text',
-                'text':
-                    'Error: This operation requires authorization. ${e.message}',
+                'text': 'Error during tool execution: $e',
               },
               'model': model,
               'stopReason': 'endTurn',
@@ -466,9 +460,13 @@ class ChatService {
       iterationCount++;
 
       // Build API messages from current message list, prepending system prompt
+      // Filter out elicitation messages (they return null from toApiMessage)
       final apiMessages = [
         {'role': 'system', 'content': systemPrompt},
-        ...messages.map<Map<String, dynamic>>((msg) => msg.toApiMessage()),
+        ...messages
+            .map<Map<String, dynamic>?>((msg) => msg.toApiMessage())
+            .where((msg) => msg != null)
+            .cast<Map<String, dynamic>>(),
       ];
 
       print(
@@ -589,15 +587,30 @@ class ChatService {
         // No tool calls - this is the final response
         print('ChatService: Final response received');
 
+        // If content is empty but we have reasoning, move reasoning to content
+        // This ensures the message is visible even when thinking is hidden
+        final hasContent = streamedContent.trim().isNotEmpty;
+        final hasReasoning = streamedReasoning.trim().isNotEmpty;
+
+        final String finalContent;
+        final String? finalReasoning;
+
+        if (!hasContent && hasReasoning) {
+          // Move reasoning to content so it's always visible
+          finalContent = streamedReasoning.trim();
+          finalReasoning = null;
+        } else {
+          finalContent = streamedContent;
+          finalReasoning = hasReasoning ? streamedReasoning.trim() : null;
+        }
+
         final finalMessage = Message(
           id: const Uuid().v4(),
           conversationId: conversationId,
           role: MessageRole.assistant,
-          content: streamedContent,
+          content: finalContent,
           timestamp: DateTime.now(),
-          reasoning: streamedReasoning.trim().isNotEmpty
-              ? streamedReasoning.trim()
-              : null,
+          reasoning: finalReasoning,
         );
 
         _eventController.add(MessageCreated(message: finalMessage));
@@ -650,13 +663,29 @@ class ChatService {
       );
 
       // Parse arguments
-      final Map<String, dynamic> toolArgs;
-      if (toolArgsStr is String) {
-        toolArgs = Map<String, dynamic>.from(
-          const JsonCodec().decode(toolArgsStr),
+      Map<String, dynamic> toolArgs;
+      try {
+        if (toolArgsStr is String) {
+          toolArgs = Map<String, dynamic>.from(
+            const JsonCodec().decode(toolArgsStr),
+          );
+        } else {
+          toolArgs = Map<String, dynamic>.from(toolArgsStr);
+        }
+      } catch (e) {
+        // Failed to parse tool arguments - return error result with the bad arguments
+        final errorResult =
+            'Failed to parse tool arguments: $e\n\nRaw arguments received:\n$toolArgsStr';
+
+        _eventController.add(
+          ToolExecutionCompleted(
+            toolId: toolId,
+            toolName: toolName,
+            result: errorResult,
+          ),
         );
-      } else {
-        toolArgs = Map<String, dynamic>.from(toolArgsStr);
+
+        return {'toolId': toolId, 'toolName': toolName, 'result': errorResult};
       }
 
       // Find which MCP server has this tool and execute it
@@ -672,41 +701,6 @@ class ChatService {
               final toolResult = await mcpClient.callTool(toolName, toolArgs);
               result = toolResult.content.map((c) => c.text ?? '').join('\n');
             }
-          } on URLElicitationRequiredError catch (e) {
-            // Don't retry - just emit the elicitation and return a placeholder result
-            print(
-              'ChatService: URLElicitationRequiredError caught for tool $toolName',
-            );
-
-            // Emit elicitation events for each required elicitation
-            for (final elicitation in e.elicitations) {
-              _eventController.add(
-                ElicitationRequestReceived(
-                  request: elicitation,
-                  onRespond: (response) async {
-                    // Extract action and content from response
-                    final result = response['result'] as Map<String, dynamic>;
-                    final actionStr = result['action'] as String;
-                    final action = ElicitationAction.fromString(actionStr);
-                    final content = result['content'] as Map<String, dynamic>?;
-                    // Use the request's elicitationId if provided, otherwise use the request ID
-                    final elicitationId = elicitation.elicitationId ?? elicitation.id;
-
-                    // Send notification to server via the MCP client
-                    if (mcpClient != null) {
-                      await mcpClient.sendElicitationComplete(
-                        elicitationId,
-                        action,
-                        content,
-                      );
-                    }
-                  },
-                ),
-              );
-            }
-
-            // Return a placeholder result indicating elicitation is in progress
-            result = 'Elicitation request displayed to user.';
           } catch (e) {
             result = 'Error executing tool: $e';
           }

@@ -5,6 +5,7 @@ enum MessageRole {
   assistant,
   system,
   tool, // For tool result messages
+  elicitation, // For elicitation request cards (local display only, not sent to LLM)
 }
 
 class Message {
@@ -18,6 +19,8 @@ class Message {
   toolCallData; // JSON string of tool calls for assistant messages
   final String? toolCallId; // For tool role messages
   final String? toolName; // For tool role messages
+  final String?
+  elicitationData; // JSON string of elicitation request for elicitation role messages
 
   Message({
     required this.id,
@@ -29,6 +32,7 @@ class Message {
     this.toolCallData,
     this.toolCallId,
     this.toolName,
+    this.elicitationData,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,6 +46,7 @@ class Message {
       'toolCallData': toolCallData,
       'toolCallId': toolCallId,
       'toolName': toolName,
+      'elicitationData': elicitationData,
     };
   }
 
@@ -56,6 +61,7 @@ class Message {
       toolCallData: map['toolCallData'],
       toolCallId: map['toolCallId'],
       toolName: map['toolName'],
+      elicitationData: map['elicitationData'],
     );
   }
 
@@ -69,6 +75,7 @@ class Message {
     String? toolCallData,
     String? toolCallId,
     String? toolName,
+    String? elicitationData,
   }) {
     return Message(
       id: id ?? this.id,
@@ -80,11 +87,17 @@ class Message {
       toolCallData: toolCallData ?? this.toolCallData,
       toolCallId: toolCallId ?? this.toolCallId,
       toolName: toolName ?? this.toolName,
+      elicitationData: elicitationData ?? this.elicitationData,
     );
   }
 
   /// Convert this message to the format expected by OpenRouter API
-  Map<String, dynamic> toApiMessage() {
+  /// Returns null for elicitation messages as they should not be sent to the LLM
+  Map<String, dynamic>? toApiMessage() {
+    // Elicitation messages are local-only, don't send to LLM
+    if (role == MessageRole.elicitation) {
+      return null;
+    }
     if (role == MessageRole.tool) {
       // Tool result message
       return {

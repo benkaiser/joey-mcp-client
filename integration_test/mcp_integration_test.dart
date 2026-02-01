@@ -138,7 +138,7 @@ class MockMcpClientService extends McpClientService {
   }
 
   @override
-  void close() {
+  Future<void> close() async {
     // Mock close - nothing to do
   }
 }

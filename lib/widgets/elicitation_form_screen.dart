@@ -21,6 +21,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final Map<String, dynamic> _values = {};
   final Map<String, String> _errors = {};
+  final Map<String, TextEditingController> _controllers = {};
 
   @override
   void initState() {
@@ -32,7 +33,25 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
       } else if (field.type == FormFieldType.multiSelect) {
         _values[field.name] = <String>[];
       }
+
+      // Create controllers for text and number fields
+      if (field.type == FormFieldType.text ||
+          field.type == FormFieldType.number ||
+          field.type == FormFieldType.integer) {
+        _controllers[field.name] = TextEditingController(
+          text: _values[field.name]?.toString() ?? '',
+        );
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    // Dispose all controllers
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void _submit() {
@@ -76,9 +95,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
   }
 
   Widget _buildTextField(ElicitationFormField field) {
-    final controller = TextEditingController(
-      text: _values[field.name]?.toString() ?? '',
-    );
+    final controller = _controllers[field.name]!;
 
     return TextFormField(
       controller: controller,
@@ -104,9 +121,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
   }
 
   Widget _buildNumberField(ElicitationFormField field) {
-    final controller = TextEditingController(
-      text: _values[field.name]?.toString() ?? '',
-    );
+    final controller = _controllers[field.name]!;
 
     return TextFormField(
       controller: controller,
@@ -202,7 +217,11 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
   }
 
   Widget _buildMultiSelectField(ElicitationFormField field) {
-    final selectedValues = _values[field.name] as List<String>? ?? [];
+    // Handle both List<String> and List<dynamic> from JSON
+    final rawValues = _values[field.name];
+    final selectedValues = rawValues is List
+        ? rawValues.map((e) => e.toString()).toList()
+        : <String>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +253,11 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
             value: isSelected,
             onChanged: (checked) {
               setState(() {
-                final list = _values[field.name] as List<String>? ?? [];
+                // Safely convert to List<String> to handle List<dynamic> from JSON
+                final rawList = _values[field.name];
+                final list = rawList is List
+                    ? rawList.map((e) => e.toString()).toList()
+                    : <String>[];
                 if (checked == true && !list.contains(enumValue)) {
                   list.add(enumValue);
                 } else if (checked == false) {

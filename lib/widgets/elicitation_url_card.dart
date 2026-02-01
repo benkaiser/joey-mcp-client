@@ -5,15 +5,20 @@ import '../models/elicitation.dart';
 /// Card widget for displaying URL mode elicitation requests
 class ElicitationUrlCard extends StatelessWidget {
   final ElicitationRequest request;
-  final Future<void> Function(ElicitationAction action) onRespond;
+  final Future<void> Function(ElicitationAction action)? onRespond;
+  final ElicitationAction?
+  responseState; // null = pending, accept = completed, decline = declined
 
   const ElicitationUrlCard({
     super.key,
     required this.request,
-    required this.onRespond,
+    this.onRespond,
+    this.responseState,
   });
 
-  Future<void> _openUrl(BuildContext context) async {
+  bool get _isResponded => responseState != null;
+
+  Future<void> _openUrl(BuildContext context, {bool isViewOnly = false}) async {
     if (request.url == null) return;
 
     final uri = Uri.tryParse(request.url!);
@@ -26,6 +31,25 @@ class ElicitationUrlCard extends StatelessWidget {
       );
       return;
     }
+
+    // For view-only mode (already responded), just open the URL directly
+    if (isViewOnly) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error opening URL: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    if (onRespond == null) return;
 
     // Show confirmation dialog with URL
     final confirmed = await showDialog<bool>(
@@ -86,7 +110,7 @@ class ElicitationUrlCard extends StatelessWidget {
 
         if (launched) {
           // User opened the URL - respond with accept
-          await onRespond(ElicitationAction.accept);
+          await onRespond!(ElicitationAction.accept);
         } else {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -96,7 +120,7 @@ class ElicitationUrlCard extends StatelessWidget {
               ),
             );
           }
-          await onRespond(ElicitationAction.cancel);
+          await onRespond!(ElicitationAction.cancel);
         }
       } catch (e) {
         if (context.mounted) {
@@ -107,19 +131,44 @@ class ElicitationUrlCard extends StatelessWidget {
             ),
           );
         }
-        await onRespond(ElicitationAction.cancel);
+        await onRespond!(ElicitationAction.cancel);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isCompleted = responseState == ElicitationAction.accept;
+    final isDeclined = responseState == ElicitationAction.decline;
+
+    Color borderColor;
+    Color iconColor;
+    IconData icon;
+    String title;
+
+    if (isCompleted) {
+      borderColor = Colors.green.shade400;
+      iconColor = Colors.green.shade700;
+      icon = Icons.check_circle;
+      title = 'URL Opened';
+    } else if (isDeclined) {
+      borderColor = Colors.grey.shade400;
+      iconColor = Colors.grey.shade600;
+      icon = Icons.cancel;
+      title = 'Action Declined';
+    } else {
+      borderColor = Colors.blue.shade300;
+      iconColor = Colors.blue.shade700;
+      icon = Icons.link;
+      title = 'External Action Required';
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.blue.shade300, width: 1),
+        side: BorderSide(color: borderColor, width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -128,12 +177,12 @@ class ElicitationUrlCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.link, color: Colors.blue.shade700),
+                Icon(icon, color: iconColor),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'External Action Required',
-                    style: TextStyle(
+                    title,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -150,17 +199,24 @@ class ElicitationUrlCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                  onPressed: () => onRespond(ElicitationAction.decline),
-                  child: const Text('Decline'),
-                ),
-                const SizedBox(width: 8),
+                if (!_isResponded) ...[
+                  TextButton(
+                    onPressed: onRespond != null
+                        ? () => onRespond!(ElicitationAction.decline)
+                        : null,
+                    child: const Text('Decline'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                // Always show Open URL button for URL cards (even after responding)
                 ElevatedButton.icon(
-                  onPressed: () => _openUrl(context),
+                  onPressed: () => _openUrl(context, isViewOnly: _isResponded),
                   icon: const Icon(Icons.open_in_new),
-                  label: const Text('Open URL'),
+                  label: Text(_isResponded ? 'Open URL Again' : 'Open URL'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
+                    backgroundColor: _isResponded
+                        ? Colors.grey.shade600
+                        : Colors.blue.shade700,
                     foregroundColor: Colors.white,
                   ),
                 ),

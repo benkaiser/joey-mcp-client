@@ -127,6 +127,19 @@ class ConversationProvider extends ChangeNotifier {
     await updateMessageContent(messageId, newContent);
   }
 
+  /// Update the full message object (for updating elicitationData, etc.)
+  Future<void> updateFullMessage(Message updatedMessage) async {
+    for (final messages in _messages.values) {
+      final index = messages.indexWhere((m) => m.id == updatedMessage.id);
+      if (index != -1) {
+        messages[index] = updatedMessage;
+        await _db.updateMessage(updatedMessage);
+        notifyListeners();
+        break;
+      }
+    }
+  }
+
   Future<void> deleteMessage(String messageId) async {
     // Find and remove the message
     for (final messages in _messages.values) {
