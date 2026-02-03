@@ -77,6 +77,32 @@ dev_dependencies:
   mockito: ^5.4.4
   build_runner: ^2.4.6
 
+  # App icon generation
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  macos:
+    generate: true
+    image_path: "assets/icon-drafting/macos.png"
+  windows:
+    generate: true
+    image_path: "assets/icon-drafting/cleaned-logo.png"
+    icon_size: 48
+  linux:
+    generate: true
+    image_path: "assets/icon-drafting/cleaned-logo.png"
+  web:
+    generate: true
+    image_path: "assets/icon-drafting/cleaned-logo.png"
+    background_color: "#ffffff"
+    theme_color: "#ffffff"
+  image_path: "assets/icon-drafting/cleaned-logo.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon-drafting/cleaned-logo.png"
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
