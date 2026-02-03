@@ -94,33 +94,62 @@ class MessageBubble extends StatelessWidget {
                             ],
                           ),
                         )
-                      : SelectionArea(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Show reasoning if present (for assistant messages)
-                              if (message.reasoning != null &&
-                                  message.reasoning!.isNotEmpty) ...[
-                                if (showThinking)
-                                  // Full reasoning text when thinking is enabled
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Icon(
+                      : Focus(
+                          autofocus: false,
+                          child: SelectionArea(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Show reasoning if present (for assistant messages)
+                                if (message.reasoning != null &&
+                                    message.reasoning!.isNotEmpty) ...[
+                                  if (showThinking)
+                                    // Full reasoning text when thinking is enabled
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 2,
+                                          ),
+                                          child: Icon(
+                                            Icons.psychology_outlined,
+                                            size: 14,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            message.reasoning!,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                              fontSize: 13,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    // Just "Thinking..." indicator when thinking is hidden
+                                    Row(
+                                      children: [
+                                        Icon(
                                           Icons.psychology_outlined,
                                           size: 14,
                                           color: Theme.of(
                                             context,
                                           ).colorScheme.onSurfaceVariant,
                                         ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          message.reasoning!,
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Thinking...',
                                           style: TextStyle(
                                             color: Theme.of(
                                               context,
@@ -129,41 +158,16 @@ class MessageBubble extends StatelessWidget {
                                             fontStyle: FontStyle.italic,
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  )
-                                else
-                                  // Just "Thinking..." indicator when thinking is hidden
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.psychology_outlined,
-                                        size: 14,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Thinking...',
-                                        style: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                          fontSize: 13,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                const SizedBox(height: 12),
-                              ],
-                              // Assistant content - no bubble
-                              if (message.content.isNotEmpty)
-                                MarkdownBody(
-                                  data: message.content,
-                                  shrinkWrap: true,
-                                  styleSheet: MarkdownStyleSheet(
+                                      ],
+                                    ),
+                                  const SizedBox(height: 12),
+                                ],
+                                // Assistant content - no bubble
+                                if (message.content.isNotEmpty)
+                                  MarkdownBody(
+                                    data: message.content,
+                                    shrinkWrap: true,
+                                    styleSheet: MarkdownStyleSheet(
                                     p: TextStyle(
                                       color: Theme.of(
                                         context,
@@ -246,6 +250,7 @@ class MessageBubble extends StatelessWidget {
                               ],
                             ],
                           ),
+                        ),
                         ),
                 const SizedBox(height: 4),
                 Padding(
