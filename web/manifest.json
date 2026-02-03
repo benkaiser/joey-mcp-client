@@ -1,11 +1,11 @@
 {
-    "name": "joey_mcp_client_flutter",
-    "short_name": "joey_mcp_client_flutter",
+    "name": "Joey MCP Client",
+    "short_name": "Joey",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#ffffff",
-    "description": "A new Flutter project.",
+    "description": "A mobile chat application that connects to MCP servers.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
