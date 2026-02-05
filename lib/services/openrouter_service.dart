@@ -251,11 +251,9 @@ class OpenRouterService {
       if (response.statusCode == 200 && response.data != null) {
         final stream = response.data!.stream;
         String buffer = '';
-        int chunkCount = 0;
         List<Map<String, dynamic>> accumulatedToolCalls = [];
 
         await for (final chunk in stream) {
-          chunkCount++;
           final text = utf8.decode(chunk);
           buffer += text;
 
@@ -265,19 +263,22 @@ class OpenRouterService {
 
           for (int i = 0; i < lines.length - 1; i++) {
             final line = lines[i].trim();
-            if (line.isEmpty || !line.startsWith('data: ')) continue;
+
+            // Skip keep-alive comments and empty lines
+            if (line.isEmpty ||
+                line == ': OPENROUTER PROCESSING' ||
+                !line.startsWith('data: ')) {
+              continue;
+            }
 
             final data = line.substring(6); // Remove 'data: ' prefix
             if (data == '[DONE]') {
-              print('OpenRouter: Stream completed with [DONE]');
               // Emit accumulated tool calls if any
               if (accumulatedToolCalls.isNotEmpty) {
-                print(
-                  'OpenRouter: Emitting ${accumulatedToolCalls.length} accumulated tool calls',
-                );
                 yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
+                accumulatedToolCalls = []; // Clear to prevent double-emit
               }
-              continue;
+              return; // Stream is done, exit the generator
             }
 
             try {
@@ -286,14 +287,14 @@ class OpenRouterService {
               // Check for errors in the chunk
               final error = json['error'];
               if (error != null) {
-                print('OpenRouter: ERROR in stream chunk:');
-                print('  Full error object: ${jsonEncode(error)}');
                 throw Exception('Provider error: ${jsonEncode(error)}');
               }
 
               final choices = json['choices'] as List<dynamic>?;
               if (choices != null && choices.isNotEmpty) {
-                final delta = choices[0]['delta'] as Map<String, dynamic>?;
+                final choice = choices[0] as Map<String, dynamic>;
+                final delta = choice['delta'] as Map<String, dynamic>?;
+                final finishReason = choice['finish_reason'];
 
                 // Check for tool calls in delta
                 final toolCallsDeltas = delta?['tool_calls'] as List<dynamic>?;
@@ -336,10 +337,6 @@ class OpenRouterService {
                             (functionDelta['arguments'] as String);
                       }
                     }
-
-                    print(
-                      'OpenRouter: Accumulated tool call at index $index: ${accumulatedToolCalls[index]}',
-                    );
                   }
                 }
 
@@ -376,6 +373,16 @@ class OpenRouterService {
                 if (content != null && content.isNotEmpty) {
                   yield content;
                 }
+
+                // Check if stream is finished - do this AFTER processing the final chunk's content
+                if (finishReason != null) {
+                  // Emit accumulated tool calls if any
+                  if (accumulatedToolCalls.isNotEmpty) {
+                    yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
+                    accumulatedToolCalls = []; // Clear to prevent double-emit
+                  }
+                  return; // Exit the stream generator
+                }
               }
             } catch (e) {
               print('OpenRouter: Failed to parse JSON line: $line');
@@ -385,7 +392,6 @@ class OpenRouterService {
             }
           }
         }
-        print('OpenRouter: Stream ended after $chunkCount chunks');
       } else {
         print(
           'OpenRouter: chatCompletionStream failed with status ${response.statusCode}',
