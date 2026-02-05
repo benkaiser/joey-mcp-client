@@ -1,0 +1,37 @@
+MIT License with App Store Non-Compete Clause
+
+Copyright (c) 2026 Benjamin Kaiser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+ADDITIONAL RESTRICTION (rolling 2-year window):
+
+This license includes an additional restriction that applies to code less than
+2 years old (based on git commit date):
+
+You may not use any portion of this Software that was committed within the last
+2 years to create, develop, publish, or distribute a competing application on
+any mobile app store (including but not limited to Apple App Store, Google Play
+Store, or similar app distribution platforms) without explicit written
+permission from the copyright holder.
+
+Code that is 2 years or older (from the date of its git commit) automatically
+reverts to the standard MIT License terms and may be used without this
+restriction. This means older versions/clones of this repository may be freely
+used under standard MIT terms once all included code is at least 2 years old.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

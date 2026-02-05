@@ -73,4 +73,11 @@ Looking for MCP servers to connect to? Check out:
 
 ## License
 
-MIT License - see LICENSE file for details
+This project uses a modified MIT License with a temporary non-compete clause:
+
+- **Code less than 2 years old**: You may not use it to build competing apps on mobile app stores (Apple App Store, Google Play, etc.) without written permission
+- **Code 2+ years old**: Automatically reverts to standard MIT License with no restrictions
+
+This means an older clone of the repo (where all code is 2+ years old) can be freely distributed under MIT.
+
+See [LICENSE](LICENSE) for full details.
