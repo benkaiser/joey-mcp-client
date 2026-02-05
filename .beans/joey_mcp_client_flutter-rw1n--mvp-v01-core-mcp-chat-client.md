@@ -1,11 +1,11 @@
 ---
 # joey_mcp_client_flutter-rw1n
 title: 'MVP - v0.1: Core MCP Chat Client'
-status: todo
+status: scrapped
 type: milestone
 priority: high
 created_at: 2026-01-18T04:31:12Z
-updated_at: 2026-01-18T04:31:12Z
+updated_at: 2026-02-05T13:55:20Z
 ---
 
 First working version of joey-mcp-client built with Flutter with core functionality:
