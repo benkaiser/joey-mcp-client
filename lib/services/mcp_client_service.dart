@@ -68,6 +68,37 @@ class McpContent {
   }
 }
 
+/// Helper class to manage timeout state for a single request
+class _RequestTimeoutState {
+  final int id;
+  final BasicAbortController abortController;
+  Timer? _timer;
+  final void Function() _onTimeout;
+
+  _RequestTimeoutState({
+    required this.id,
+    required this.abortController,
+    required void Function() onTimeout,
+  }) : _onTimeout = onTimeout;
+
+  void startTimer(Duration duration) {
+    _timer?.cancel();
+    _timer = Timer(duration, () {
+      abortController.abort('Request timed out');
+      _onTimeout();
+    });
+  }
+
+  void extendTimeout(Duration duration) {
+    startTimer(duration);
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
+  }
+}
+
 /// MCP Client Service using the mcp_dart library
 class McpClientService {
   final String serverUrl;
@@ -75,6 +106,10 @@ class McpClientService {
 
   McpClient? _client;
   StreamableHttpClientTransport? _transport;
+
+  /// Track active tool requests for timeout management
+  final Map<int, _RequestTimeoutState> _activeRequests = {};
+  int _nextRequestId = 0;
 
   /// Track whether a sampling request is currently active
   bool _isSamplingActive = false;
@@ -171,8 +206,9 @@ class McpClientService {
       );
     }
 
-    // Mark sampling as active for extended timeouts
+    // Mark sampling as active and extend all active request timeouts
     _isSamplingActive = true;
+    _extendAllActiveTimeouts();
 
     // Convert to the format expected by our callback
     final requestMap = {
@@ -292,8 +328,9 @@ class McpClientService {
       );
     }
 
-    // Mark elicitation as active for extended timeouts
+    // Mark elicitation as active and extend all active request timeouts
     _isElicitationActive = true;
+    _extendAllActiveTimeouts();
 
     try {
       // Create a completer to wait for user response
@@ -371,20 +408,44 @@ class McpClientService {
       throw Exception('MCP client not initialized');
     }
 
+    // Create timeout state for this request
+    final requestId = _nextRequestId++;
+    final abortController = BasicAbortController();
+    final timeoutState = _RequestTimeoutState(
+      id: requestId,
+      abortController: abortController,
+      onTimeout: () {
+        print('MCP: Tool $toolName timed out');
+        _activeRequests.remove(requestId);
+      },
+    );
+
+    // Register this request and start with normal timeout
+    _activeRequests[requestId] = timeoutState;
+    timeoutState.startTimer(_normalTimeout);
+
     try {
       print('MCP: Calling tool $toolName with arguments: $arguments');
 
-      // Always use extended timeout for tool calls since they may trigger
-      // elicitation or sampling requests during execution, which require
-      // user interaction and can take significant time
+      // Use a very long timeout in mcp_dart (we manage timeout ourselves)
+      // Pass our abort signal so we can cancel if our timeout fires
       final result = await _client!.callTool(
         CallToolRequest(name: toolName, arguments: arguments),
-        options: RequestOptions(timeout: _extendedTimeout),
+        options: RequestOptions(
+          timeout: const Duration(hours: 1), // Let our timer handle it
+          signal: abortController.signal,
+        ),
       );
 
       print('MCP: Tool $toolName completed, isError: ${result.isError}');
 
       return McpToolResult.fromMcpDartResult(result);
+    } on AbortError catch (e) {
+      print('MCP: Tool $toolName aborted: ${e.reason}');
+      return McpToolResult(
+        content: [McpContent(type: 'text', text: 'Error: Request timed out')],
+        isError: true,
+      );
     } catch (e) {
       print('MCP: Failed to call tool $toolName: $e');
 
@@ -398,6 +459,18 @@ class McpClientService {
       }
 
       throw Exception('Failed to call tool $toolName: $e');
+    } finally {
+      // Clean up timeout state
+      timeoutState.cancel();
+      _activeRequests.remove(requestId);
+    }
+  }
+
+  /// Extend timeouts for all active requests (called when sampling/elicitation starts)
+  void _extendAllActiveTimeouts() {
+    print('MCP: Extending timeouts for ${_activeRequests.length} active request(s)');
+    for (final state in _activeRequests.values) {
+      state.extendTimeout(_extendedTimeout);
     }
   }
 
