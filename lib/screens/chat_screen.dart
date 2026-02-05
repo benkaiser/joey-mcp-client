@@ -141,14 +141,14 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      });
+    // With reverse: true on ListView, position 0 is the bottom.
+    // We only need to scroll if user has scrolled up to view history.
+    if (_scrollController.hasClients && _scrollController.position.pixels > 0) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     }
   }
 
@@ -299,12 +299,10 @@ class _ChatScreenState extends State<ChatScreen> {
         _currentToolName = null; // Clear tool name when content is streaming
         _isToolExecuting = false;
       });
-      _scrollToBottom();
     } else if (event is ReasoningChunk) {
       setState(() {
         _streamingReasoning = event.content;
       });
-      _scrollToBottom();
     } else if (event is MessageCreated) {
       // Clear streaming state when message is persisted
       setState(() {
@@ -313,7 +311,6 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       // Add message to provider
       provider.addMessage(event.message);
-      _scrollToBottom();
     } else if (event is ToolExecutionStarted) {
       setState(() {
         _currentToolName = event.toolName;
@@ -367,7 +364,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Add message to provider
       provider.addMessage(elicitationMessage);
-      _scrollToBottom();
     } else if (event is AuthenticationRequired) {
       // Handle auth error by showing a message in the chat
       // The error will be displayed as a special card in the message list
@@ -415,7 +411,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Add message to provider
       provider.addMessage(notificationMessage);
-      _scrollToBottom();
     }
   }
 
@@ -885,32 +880,39 @@ class _ChatScreenState extends State<ChatScreen> {
                       return true;
                     }).toList();
 
+                    // Calculate total item count
+                    final hasStreaming =
+                        _streamingContent.isNotEmpty ||
+                        _streamingReasoning.isNotEmpty;
+                    final itemCount =
+                        displayMessages.length +
+                        (hasStreaming ? 1 : 0) +
+                        (_authenticationRequired ? 1 : 0);
+
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount:
-                          displayMessages.length +
-                          ((_streamingContent.isNotEmpty ||
-                                  _streamingReasoning.isNotEmpty)
-                              ? 1
-                              : 0) +
-                          (_authenticationRequired ? 1 : 0),
+                      reverse: true, // Anchor to bottom, grow upward
+                      itemCount: itemCount,
                       itemBuilder: (context, index) {
-                        // Show auth required card at the end
-                        if (_authenticationRequired &&
-                            index ==
-                                displayMessages.length +
-                                    ((_streamingContent.isNotEmpty ||
-                                            _streamingReasoning.isNotEmpty)
-                                        ? 1
-                                        : 0)) {
+                        // Since list is reversed, index 0 is the bottom (newest)
+                        // We need to map reversed index to actual items:
+                        // - Index 0: auth card (if present) or streaming (if present) or last message
+                        // - Index 1: streaming (if auth present) or messages
+                        // - Higher indices: older messages
+
+                        // Show auth required card at index 0 (bottom)
+                        if (_authenticationRequired && index == 0) {
                           return _buildAuthRequiredCard();
                         }
 
-                        // Show streaming content as last item
-                        if ((_streamingContent.isNotEmpty ||
-                                _streamingReasoning.isNotEmpty) &&
-                            index == displayMessages.length) {
+                        // Adjust index if auth card is present
+                        final adjustedIndex = _authenticationRequired
+                            ? index - 1
+                            : index;
+
+                        // Show streaming content at adjusted index 0
+                        if (hasStreaming && adjustedIndex == 0) {
                           final streamingMessage = Message(
                             id: 'streaming',
                             conversationId: widget.conversation.id,
@@ -930,7 +932,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        final message = displayMessages[index];
+                        // Calculate message index (reversed: higher index = older message)
+                        final messageIndex = hasStreaming
+                            ? adjustedIndex - 1
+                            : adjustedIndex;
+                        // Map to actual message (from end of list for reversed display)
+                        final actualMessageIndex =
+                            displayMessages.length - 1 - messageIndex;
+
+                        if (actualMessageIndex < 0 ||
+                            actualMessageIndex >= displayMessages.length) {
+                          return const SizedBox.shrink();
+                        }
+
+                        final message = displayMessages[actualMessageIndex];
 
                         // Render elicitation messages as cards
                         if (message.role == MessageRole.elicitation) {
