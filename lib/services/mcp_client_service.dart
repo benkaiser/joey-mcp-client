@@ -374,18 +374,12 @@ class McpClientService {
     try {
       print('MCP: Calling tool $toolName with arguments: $arguments');
 
-      // Use extended timeout if sampling or elicitation is active
-      final timeout = (_isSamplingActive || _isElicitationActive)
-          ? _extendedTimeout
-          : _normalTimeout;
-
-      if (_isSamplingActive || _isElicitationActive) {
-        print('MCP: Using extended timeout (${timeout.inSeconds}s) due to active ${_isSamplingActive ? "sampling" : "elicitation"}');
-      }
-
+      // Always use extended timeout for tool calls since they may trigger
+      // elicitation or sampling requests during execution, which require
+      // user interaction and can take significant time
       final result = await _client!.callTool(
         CallToolRequest(name: toolName, arguments: arguments),
-        options: RequestOptions(timeout: timeout),
+        options: RequestOptions(timeout: _extendedTimeout),
       );
 
       print('MCP: Tool $toolName completed, isError: ${result.isError}');
