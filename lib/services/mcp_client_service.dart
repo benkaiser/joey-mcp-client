@@ -76,6 +76,18 @@ class McpClientService {
   McpClient? _client;
   StreamableHttpClientTransport? _transport;
 
+  /// Track whether a sampling request is currently active
+  bool _isSamplingActive = false;
+
+  /// Track whether an elicitation request is currently active
+  bool _isElicitationActive = false;
+
+  /// Extended timeout duration for when sampling/elicitation is active (5 minutes)
+  static const Duration _extendedTimeout = Duration(minutes: 5);
+
+  /// Normal timeout duration (60 seconds - matches mcp_dart default)
+  static const Duration _normalTimeout = Duration(seconds: 60);
+
   /// Callback for handling sampling requests from the server
   Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
   onSamplingRequest;
@@ -159,6 +171,9 @@ class McpClientService {
       );
     }
 
+    // Mark sampling as active for extended timeouts
+    _isSamplingActive = true;
+
     // Convert to the format expected by our callback
     final requestMap = {
       'method': 'sampling/createMessage',
@@ -226,6 +241,9 @@ class McpClientService {
         ErrorCode.internalError.value,
         'Sampling request failed: $e',
       );
+    } finally {
+      // Mark sampling as complete
+      _isSamplingActive = false;
     }
   }
 
@@ -274,51 +292,59 @@ class McpClientService {
       );
     }
 
-    // Create a completer to wait for user response
-    _pendingElicitationCompleter = Completer<ElicitResult>();
+    // Mark elicitation as active for extended timeouts
+    _isElicitationActive = true;
 
-    // Convert to app's elicitation format
-    final appRequest = app_elicitation.ElicitationRequest(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      mode: request.isUrlMode
-          ? app_elicitation.ElicitationMode.url
-          : app_elicitation.ElicitationMode.form,
-      message: request.message,
-      elicitationId: request.elicitationId,
-      url: request.url,
-      requestedSchema: request.requestedSchema?.toJson(),
-    );
+    try {
+      // Create a completer to wait for user response
+      _pendingElicitationCompleter = Completer<ElicitResult>();
 
-    // Call the handler with a callback to complete the elicitation
-    await onElicitationRequest!(appRequest, (
-      elicitationId,
-      action,
-      content,
-    ) async {
-      // Convert action to mcp_dart format
-      String mcpAction;
-      switch (action) {
-        case app_elicitation.ElicitationAction.accept:
-          mcpAction = 'accept';
-          break;
-        case app_elicitation.ElicitationAction.decline:
-          mcpAction = 'decline';
-          break;
-        case app_elicitation.ElicitationAction.cancel:
-          mcpAction = 'cancel';
-          break;
-      }
-
-      _pendingElicitationCompleter?.complete(
-        ElicitResult(
-          action: mcpAction,
-          content: content,
-          elicitationId: elicitationId.isNotEmpty ? elicitationId : null,
-        ),
+      // Convert to app's elicitation format
+      final appRequest = app_elicitation.ElicitationRequest(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        mode: request.isUrlMode
+            ? app_elicitation.ElicitationMode.url
+            : app_elicitation.ElicitationMode.form,
+        message: request.message,
+        elicitationId: request.elicitationId,
+        url: request.url,
+        requestedSchema: request.requestedSchema?.toJson(),
       );
-    });
 
-    return await _pendingElicitationCompleter!.future;
+      // Call the handler with a callback to complete the elicitation
+      await onElicitationRequest!(appRequest, (
+        elicitationId,
+        action,
+        content,
+      ) async {
+        // Convert action to mcp_dart format
+        String mcpAction;
+        switch (action) {
+          case app_elicitation.ElicitationAction.accept:
+            mcpAction = 'accept';
+            break;
+          case app_elicitation.ElicitationAction.decline:
+            mcpAction = 'decline';
+            break;
+          case app_elicitation.ElicitationAction.cancel:
+            mcpAction = 'cancel';
+            break;
+        }
+
+        _pendingElicitationCompleter?.complete(
+          ElicitResult(
+            action: mcpAction,
+            content: content,
+            elicitationId: elicitationId.isNotEmpty ? elicitationId : null,
+          ),
+        );
+      });
+
+      return await _pendingElicitationCompleter!.future;
+    } finally {
+      // Mark elicitation as complete
+      _isElicitationActive = false;
+    }
   }
 
   /// List available tools from the MCP server
@@ -348,8 +374,18 @@ class McpClientService {
     try {
       print('MCP: Calling tool $toolName with arguments: $arguments');
 
+      // Use extended timeout if sampling or elicitation is active
+      final timeout = (_isSamplingActive || _isElicitationActive)
+          ? _extendedTimeout
+          : _normalTimeout;
+
+      if (_isSamplingActive || _isElicitationActive) {
+        print('MCP: Using extended timeout (${timeout.inSeconds}s) due to active ${_isSamplingActive ? "sampling" : "elicitation"}');
+      }
+
       final result = await _client!.callTool(
         CallToolRequest(name: toolName, arguments: arguments),
+        options: RequestOptions(timeout: timeout),
       );
 
       print('MCP: Tool $toolName completed, isError: ${result.isError}');
@@ -382,6 +418,15 @@ class McpClientService {
     // This method is kept for backward compatibility but is a no-op
     print('MCP: Elicitation complete: $elicitationId, action: ${action.name}');
   }
+
+  /// Check if an extended timeout operation (sampling/elicitation) is active
+  bool get isExtendedTimeoutActive => _isSamplingActive || _isElicitationActive;
+
+  /// Check if sampling is currently active
+  bool get isSamplingActive => _isSamplingActive;
+
+  /// Check if elicitation is currently active
+  bool get isElicitationActive => _isElicitationActive;
 
   /// Close the connection
   Future<void> close() async {
