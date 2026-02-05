@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -23,6 +24,11 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Handle MCP notification messages
+    if (message.role == MessageRole.mcpNotification) {
+      return _buildNotificationMessage(context);
+    }
+
     final isUser = message.role == MessageRole.user;
     final isLoading =
         !isUser &&
@@ -168,89 +174,89 @@ class MessageBubble extends StatelessWidget {
                                     data: message.content,
                                     shrinkWrap: true,
                                     styleSheet: MarkdownStyleSheet(
-                                    p: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
+                                      p: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      code: TextStyle(
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      codeblockDecoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      blockquoteDecoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      h1: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      h2: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      h3: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      listBullet: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      a: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        decoration: TextDecoration.underline,
+                                      ),
                                     ),
-                                    code: TextStyle(
-                                      backgroundColor: Theme.of(
-                                        context,
-                                      ).colorScheme.surfaceContainerHigh,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                    ),
-                                    codeblockDecoration: BoxDecoration(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.surfaceContainerHigh,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    blockquoteDecoration: BoxDecoration(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.surfaceContainerHigh,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    h1: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    h2: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    h3: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    listBullet: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                    ),
-                                    a: TextStyle(
+                                    onTapLink: (text, href, title) {
+                                      if (href != null) {
+                                        launchUrl(
+                                          Uri.parse(href),
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                if (isStreaming) ...[
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    width: 8,
+                                    height: 12,
+                                    decoration: BoxDecoration(
                                       color: Theme.of(
                                         context,
                                       ).colorScheme.primary,
-                                      decoration: TextDecoration.underline,
+                                      borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
-                                  onTapLink: (text, href, title) {
-                                    if (href != null) {
-                                      launchUrl(
-                                        Uri.parse(href),
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  },
-                                ),
-                              if (isStreaming) ...[
-                                const SizedBox(height: 4),
-                                Container(
-                                  width: 8,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
                         ),
                 const SizedBox(height: 4),
                 Padding(
@@ -338,6 +344,133 @@ class MessageBubble extends StatelessWidget {
       const SnackBar(
         content: Text('Message copied to clipboard'),
         duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Build the notification message display
+  Widget _buildNotificationMessage(BuildContext context) {
+    String serverName = 'MCP Server';
+    String method = 'notification';
+    Map<String, dynamic>? params;
+
+    if (message.notificationData != null) {
+      try {
+        final data =
+            jsonDecode(message.notificationData!) as Map<String, dynamic>;
+        serverName = data['serverName'] as String? ?? 'MCP Server';
+        method = data['method'] as String? ?? 'notification';
+        params = data['params'] as Map<String, dynamic>?;
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
+    // Format the params as JSON if present
+    String paramsJson = '';
+    if (params != null) {
+      const encoder = JsonEncoder.withIndent('  ');
+      paramsJson = encoder.convert(params);
+    }
+
+    // When showThinking is disabled, show a minimal collapsed view
+    if (!showThinking) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12, left: 16),
+        child: Row(
+          children: [
+            Icon(
+              Icons.notifications_outlined,
+              size: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Notification from $serverName',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Full notification display when showThinking is enabled
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, left: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_outlined,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Notification from $serverName',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Notification content in a styled container
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Method
+                Text(
+                  'method: "$method"',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+                if (paramsJson.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'params:',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  SelectableText(
+                    paramsJson,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

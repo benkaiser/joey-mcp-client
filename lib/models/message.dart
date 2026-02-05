@@ -6,6 +6,7 @@ enum MessageRole {
   system,
   tool, // For tool result messages
   elicitation, // For elicitation request cards (local display only, not sent to LLM)
+  mcpNotification, // For MCP server notifications (included as context for LLM)
 }
 
 class Message {
@@ -21,6 +22,8 @@ class Message {
   final String? toolName; // For tool role messages
   final String?
   elicitationData; // JSON string of elicitation request for elicitation role messages
+  final String?
+  notificationData; // JSON string of MCP notification data for mcpNotification role messages
 
   Message({
     required this.id,
@@ -33,6 +36,7 @@ class Message {
     this.toolCallId,
     this.toolName,
     this.elicitationData,
+    this.notificationData,
   });
 
   Map<String, dynamic> toMap() {
@@ -47,6 +51,7 @@ class Message {
       'toolCallId': toolCallId,
       'toolName': toolName,
       'elicitationData': elicitationData,
+      'notificationData': notificationData,
     };
   }
 
@@ -62,6 +67,7 @@ class Message {
       toolCallId: map['toolCallId'],
       toolName: map['toolName'],
       elicitationData: map['elicitationData'],
+      notificationData: map['notificationData'],
     );
   }
 
@@ -76,6 +82,7 @@ class Message {
     String? toolCallId,
     String? toolName,
     String? elicitationData,
+    String? notificationData,
   }) {
     return Message(
       id: id ?? this.id,
@@ -88,6 +95,7 @@ class Message {
       toolCallId: toolCallId ?? this.toolCallId,
       toolName: toolName ?? this.toolName,
       elicitationData: elicitationData ?? this.elicitationData,
+      notificationData: notificationData ?? this.notificationData,
     );
   }
 
@@ -97,6 +105,25 @@ class Message {
     // Elicitation messages are local-only, don't send to LLM
     if (role == MessageRole.elicitation) {
       return null;
+    }
+    // MCP notifications are sent as system messages for context
+    if (role == MessageRole.mcpNotification) {
+      final data = notificationData != null
+          ? jsonDecode(notificationData!)
+          : {};
+      final serverName = data['serverName'] ?? 'MCP Server';
+      final method = data['method'] ?? 'unknown';
+      final params = data['params'];
+
+      // Format the notification as context for the LLM
+      String notificationContent =
+          '[Notification from MCP server "$serverName"]\n';
+      notificationContent += 'Method: $method\n';
+      if (params != null) {
+        notificationContent += 'Params: ${jsonEncode(params)}';
+      }
+
+      return {'role': 'user', 'content': notificationContent};
     }
     if (role == MessageRole.tool) {
       // Tool result message

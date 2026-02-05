@@ -49,6 +49,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, Function(Map<String, dynamic>)> _elicitationResponders = {};
   // Track responded elicitations to prevent duplicate sends
   final Set<String> _respondedElicitationIds = {};
+  // Track MCP progress notifications
+  McpProgressNotificationReceived? _currentProgress;
 
   @override
   void initState() {
@@ -203,10 +205,17 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         // Initialize ChatService if not already done
         if (_chatService == null) {
+          // Build server names map
+          final serverNames = <String, String>{};
+          for (final server in _mcpServers) {
+            serverNames[server.id] = server.name;
+          }
+
           _chatService = ChatService(
             openRouterService: openRouterService,
             mcpClients: _mcpClients,
             mcpTools: _mcpTools,
+            serverNames: serverNames,
           );
 
           // Listen to chat events
@@ -309,11 +318,13 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _currentToolName = event.toolName;
         _isToolExecuting = true; // Now calling the tool
+        _currentProgress = null; // Clear any previous progress
       });
     } else if (event is ToolExecutionCompleted) {
       setState(() {
         // Keep the tool name but mark as completed
         _isToolExecuting = false;
+        _currentProgress = null; // Clear progress when tool completes
       });
     } else if (event is ConversationComplete) {
       setState(() {
@@ -322,6 +333,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _currentToolName = null;
         _isToolExecuting = false;
         _isLoading = false;
+        _currentProgress = null; // Clear progress when conversation completes
       });
     } else if (event is MaxIterationsReached) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -374,6 +386,52 @@ class _ChatScreenState extends State<ChatScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    } else if (event is McpProgressNotificationReceived) {
+      // Update progress state
+      setState(() {
+        _currentProgress = event;
+      });
+    } else if (event is McpToolsListChanged) {
+      // Refresh tools list for the server
+      _refreshToolsForServer(event.serverId);
+    } else if (event is McpResourcesListChanged) {
+      // Could refresh resources here if we had a resources UI
+      print('Resources list changed for server: ${event.serverId}');
+    } else if (event is McpGenericNotificationReceived) {
+      // Create a notification message to display in the chat
+      final notificationMessage = Message(
+        id: const Uuid().v4(),
+        conversationId: widget.conversation.id,
+        role: MessageRole.mcpNotification,
+        content: '', // Content is in notificationData
+        timestamp: DateTime.now(),
+        notificationData: jsonEncode({
+          'serverName': event.serverName,
+          'serverId': event.serverId,
+          'method': event.method,
+          'params': event.params,
+        }),
+      );
+
+      // Add message to provider
+      provider.addMessage(notificationMessage);
+      _scrollToBottom();
+    }
+  }
+
+  /// Refresh the tools list for a specific MCP server
+  Future<void> _refreshToolsForServer(String serverId) async {
+    final client = _mcpClients[serverId];
+    if (client == null) return;
+
+    try {
+      final tools = await client.listTools();
+      setState(() {
+        _mcpTools[serverId] = tools;
+      });
+      print('Refreshed tools for server $serverId: ${tools.length} tools');
+    } catch (e) {
+      print('Failed to refresh tools for server $serverId: $e');
     }
   }
 
@@ -685,52 +743,53 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        conversation.model,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.7),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            conversation.model,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.7),
+                                ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        if (_modelDetails != null &&
+                            _modelDetails!['pricing'] != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            _getPricingText(),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                                  fontSize: 11,
+                                ),
+                          ),
+                        ],
+                        if (_mcpServers.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.dns,
+                            size: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_mcpServers.length} MCP',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 11,
+                                ),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (_modelDetails != null &&
-                        _modelDetails!['pricing'] != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        _getPricingText(),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.6),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                    if (_mcpServers.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.dns,
-                        size: 14,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${_mcpServers.length} MCP',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-              ],
-            ),
               ),
             ),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -959,6 +1018,23 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
+                        // Format MCP notification messages
+                        if (message.role == MessageRole.mcpNotification) {
+                          // Show minimal indicator when thinking is disabled
+                          if (!_showThinking) {
+                            return ThinkingIndicator(message: message);
+                          }
+                          // Full notification display is handled by MessageBubble
+                          return MessageBubble(
+                            message: message,
+                            showThinking: _showThinking,
+                            onDelete: () =>
+                                _deleteMessage(message.id, provider),
+                            onEdit:
+                                null, // Notification messages can't be edited
+                          );
+                        }
+
                         // Format assistant messages with tool calls
                         if (message.role == MessageRole.assistant &&
                             message.toolCallData != null) {
@@ -1073,17 +1149,26 @@ class _ChatScreenState extends State<ChatScreen> {
                       SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child:
+                            _currentProgress != null &&
+                                _currentProgress!.percentage != null
+                            ? CircularProgressIndicator(
+                                strokeWidth: 2,
+                                value: _currentProgress!.percentage! / 100,
+                              )
+                            : CircularProgressIndicator(strokeWidth: 2),
                       ),
                       const SizedBox(width: 12),
-                      Text(
-                        _currentToolName != null
-                            ? (_isToolExecuting
-                                  ? 'Calling tool $_currentToolName...'
-                                  : 'Called tool $_currentToolName')
-                            : 'Thinking...',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Expanded(
+                        child: Text(
+                          _getLoadingStatusText(),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -1095,6 +1180,30 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       },
     );
+  }
+
+  /// Get the status text for the loading indicator
+  String _getLoadingStatusText() {
+    if (_currentToolName != null) {
+      final toolText = _isToolExecuting
+          ? 'Calling tool $_currentToolName'
+          : 'Called tool $_currentToolName';
+
+      // Add progress info if available
+      if (_currentProgress != null) {
+        final progress = _currentProgress!;
+        if (progress.message != null) {
+          return '$toolText - ${progress.message}';
+        } else if (progress.percentage != null) {
+          return '$toolText - ${progress.percentage!.toStringAsFixed(0)}%';
+        } else {
+          return '$toolText - ${progress.progress}${progress.total != null ? '/${progress.total}' : ''}';
+        }
+      }
+
+      return _isToolExecuting ? '$toolText...' : toolText;
+    }
+    return 'Thinking...';
   }
 
   Widget _buildMessageInput() {

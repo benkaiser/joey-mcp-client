@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -51,6 +51,7 @@ class DatabaseService {
         toolCallId TEXT,
         toolName TEXT,
         elicitationData TEXT,
+        notificationData TEXT,
         FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
       )
     ''');
@@ -179,6 +180,12 @@ class DatabaseService {
       // Add elicitationData column to messages table for inline elicitation cards
       await db.execute('''
         ALTER TABLE messages ADD COLUMN elicitationData TEXT
+      ''');
+    }
+    if (oldVersion < 9) {
+      // Add notificationData column to messages table for MCP server notifications
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN notificationData TEXT
       ''');
     }
   }

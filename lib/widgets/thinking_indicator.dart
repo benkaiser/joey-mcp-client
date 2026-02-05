@@ -66,6 +66,26 @@ class ThinkingIndicator extends StatelessWidget {
       return indicators;
     }
 
+    // MCP notification message
+    if (message.role == MessageRole.mcpNotification) {
+      String serverName = 'MCP Server';
+      if (message.notificationData != null) {
+        try {
+          final data = jsonDecode(message.notificationData!);
+          serverName = data['serverName'] ?? 'MCP Server';
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+      indicators.add(
+        _IndicatorData(
+          icon: Icons.notifications_outlined,
+          text: 'Notification from $serverName',
+        ),
+      );
+      return indicators;
+    }
+
     // Assistant message - check for reasoning first
     if (message.role == MessageRole.assistant &&
         message.reasoning != null &&

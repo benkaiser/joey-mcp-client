@@ -13,18 +13,67 @@ class ChatService {
   final OpenRouterService _openRouterService;
   final Map<String, McpClientService> _mcpClients;
   final Map<String, List<McpTool>> _mcpTools;
+  final Map<String, String> _serverNames; // serverId -> server name
 
   ChatService({
     required OpenRouterService openRouterService,
     required Map<String, McpClientService> mcpClients,
     required Map<String, List<McpTool>> mcpTools,
+    Map<String, String>? serverNames,
   }) : _openRouterService = openRouterService,
        _mcpClients = mcpClients,
-       _mcpTools = mcpTools {
-    // Register sampling handler for all MCP clients
-    for (final client in _mcpClients.values) {
+       _mcpTools = mcpTools,
+       _serverNames = serverNames ?? {} {
+    // Register handlers for all MCP clients
+    for (final entry in _mcpClients.entries) {
+      final serverId = entry.key;
+      final client = entry.value;
+
+      // Set server ID for notifications
+      client.setServerId(serverId);
+
+      // Register sampling handler
       client.onSamplingRequest = _handleSamplingRequest;
       client.onElicitationRequest = _handleElicitationRequest;
+
+      // Register notification handlers
+      client.onProgressNotification = (notification) {
+        _eventController.add(
+          McpProgressNotificationReceived(
+            serverId: notification.serverId,
+            progress: notification.progress,
+            total: notification.total,
+            message: notification.message,
+            progressToken: notification.progressToken,
+          ),
+        );
+      };
+
+      // Register generic notification handler
+      client.onGenericNotification = (method, params, serverId) {
+        final serverName = _serverNames[serverId] ?? serverId;
+        final event = McpGenericNotificationReceived(
+          serverId: serverId,
+          serverName: serverName,
+          method: method,
+          params: params,
+        );
+
+        // If streaming, queue the notification for later
+        if (_isStreaming) {
+          _pendingNotifications.add(event);
+        } else {
+          _eventController.add(event);
+        }
+      };
+
+      client.onToolsListChanged = () {
+        _eventController.add(McpToolsListChanged(serverId: serverId));
+      };
+
+      client.onResourcesListChanged = () {
+        _eventController.add(McpResourcesListChanged(serverId: serverId));
+      };
     }
   }
 
@@ -40,6 +89,12 @@ class ChatService {
   /// Flag to track if the current request was cancelled
   bool _wasCancelled = false;
 
+  /// Flag to track if we're currently streaming an LLM response
+  bool _isStreaming = false;
+
+  /// Queue of notifications received during streaming
+  final List<McpGenericNotificationReceived> _pendingNotifications = [];
+
   /// Current partial state when cancelled
   String _partialContent = '';
   String _partialReasoning = '';
@@ -48,6 +103,15 @@ class ChatService {
   void dispose() {
     _cancelToken?.cancel();
     _eventController.close();
+  }
+
+  /// Flush any pending notifications that were queued during streaming
+  void _flushPendingNotifications() {
+    _isStreaming = false;
+    for (final notification in _pendingNotifications) {
+      _eventController.add(notification);
+    }
+    _pendingNotifications.clear();
   }
 
   /// Cancel the current ongoing request and persist partial state
@@ -190,10 +254,7 @@ class ChatService {
           final type = block['type'] as String?;
 
           if (type == 'text') {
-            convertedContent.add({
-              'type': 'text',
-              'text': block['text'],
-            });
+            convertedContent.add({'type': 'text', 'text': block['text']});
           } else if (type == 'tool_use') {
             hasToolUse = true;
             // For OpenRouter, we need to convert to tool_calls format
@@ -230,15 +291,13 @@ class ChatService {
               });
             }
           }
-          apiMessages.add({
-            'role': 'assistant',
-            'tool_calls': toolCalls,
-          });
+          apiMessages.add({'role': 'assistant', 'tool_calls': toolCalls});
         } else if (role == 'user' && hasToolResults) {
           // For OpenRouter, tool results go in user messages
           // We need to convert to the format OpenRouter expects
           for (final block in content) {
-            if (block is Map<String, dynamic> && block['type'] == 'tool_result') {
+            if (block is Map<String, dynamic> &&
+                block['type'] == 'tool_result') {
               final toolResultContent = block['content'] as List;
               final textContent = toolResultContent
                   .where((c) => c['type'] == 'text')
@@ -303,10 +362,14 @@ class ChatService {
           },
         };
       }).toList();
-      print('ChatService: Converted ${openRouterTools.length} tools for sampling request');
+      print(
+        'ChatService: Converted ${openRouterTools.length} tools for sampling request',
+      );
       print('ChatService: Tools: ${jsonEncode(openRouterTools)}');
     } else {
-      print('ChatService: No tools in sampling request (tools param is ${tools == null ? "null" : "empty"})');
+      print(
+        'ChatService: No tools in sampling request (tools param is ${tools == null ? "null" : "empty"})',
+      );
     }
 
     int iterations = 0;
@@ -484,7 +547,8 @@ class ChatService {
       String streamedReasoning = '';
       List<dynamic>? detectedToolCalls;
 
-      // Start streaming
+      // Start streaming - mark as streaming to queue notifications
+      _isStreaming = true;
       _eventController.add(StreamingStarted(iteration: iterationCount));
 
       try {
@@ -582,6 +646,10 @@ class ChatService {
           messages.add(toolMessage);
         }
 
+        // Flush any notifications that were queued during streaming
+        // They will appear after the assistant response but before the next LLM call
+        _flushPendingNotifications();
+
         // Continue loop for next iteration
       } else {
         // No tool calls - this is the final response
@@ -639,6 +707,9 @@ class ChatService {
         }
         print('==============================\n');
 
+        // Flush any pending notifications before completing
+        _flushPendingNotifications();
+
         _eventController.add(ConversationComplete());
         break;
       }
@@ -646,6 +717,7 @@ class ChatService {
 
     if (iterationCount >= maxIterations) {
       print('ChatService: Warning - Maximum iterations reached');
+      _flushPendingNotifications();
       _eventController.add(MaxIterationsReached());
     }
   }
@@ -810,4 +882,53 @@ class ElicitationRequestReceived extends ChatEvent {
   final Function(Map<String, dynamic> response) onRespond;
 
   ElicitationRequestReceived({required this.request, required this.onRespond});
+}
+
+/// Event emitted when a progress notification is received from an MCP server
+class McpProgressNotificationReceived extends ChatEvent {
+  final String serverId;
+  final num progress;
+  final num? total;
+  final String? message;
+  final dynamic progressToken;
+
+  McpProgressNotificationReceived({
+    required this.serverId,
+    required this.progress,
+    this.total,
+    this.message,
+    this.progressToken,
+  });
+
+  /// Returns progress as a percentage (0-100) if total is known
+  double? get percentage => total != null ? (progress / total!) * 100 : null;
+}
+
+/// Event emitted when the tools list changes on an MCP server
+class McpToolsListChanged extends ChatEvent {
+  final String serverId;
+
+  McpToolsListChanged({required this.serverId});
+}
+
+/// Event emitted when the resources list changes on an MCP server
+class McpResourcesListChanged extends ChatEvent {
+  final String serverId;
+
+  McpResourcesListChanged({required this.serverId});
+}
+
+/// Event emitted when a generic notification is received from an MCP server
+class McpGenericNotificationReceived extends ChatEvent {
+  final String serverId;
+  final String serverName;
+  final String method;
+  final Map<String, dynamic>? params;
+
+  McpGenericNotificationReceived({
+    required this.serverId,
+    required this.serverName,
+    required this.method,
+    this.params,
+  });
 }

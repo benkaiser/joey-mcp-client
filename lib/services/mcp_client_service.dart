@@ -2,6 +2,26 @@ import 'dart:async';
 import 'package:mcp_dart/mcp_dart.dart';
 import '../models/elicitation.dart' as app_elicitation;
 
+/// Represents a progress notification from an MCP server
+class McpProgressNotification {
+  final dynamic progressToken;
+  final num progress;
+  final num? total;
+  final String? message;
+  final String serverId;
+
+  McpProgressNotification({
+    required this.progressToken,
+    required this.progress,
+    this.total,
+    this.message,
+    required this.serverId,
+  });
+
+  /// Returns progress as a percentage (0-100) if total is known
+  double? get percentage => total != null ? (progress / total!) * 100 : null;
+}
+
 /// Wrapper around mcp_dart Tool for backward compatibility
 class McpTool {
   final String name;
@@ -14,7 +34,7 @@ class McpTool {
     return McpTool(
       name: tool.name,
       description: tool.description,
-      inputSchema: tool.inputSchema?.toJson() ?? {},
+      inputSchema: tool.inputSchema.toJson(),
     );
   }
 
@@ -139,10 +159,32 @@ class McpClientService {
   )?
   onElicitationRequest;
 
+  /// Callback for handling progress notifications from the server
+  void Function(McpProgressNotification notification)? onProgressNotification;
+
+  /// Callback for handling generic notifications from the server
+  /// (method, params, serverId)
+  void Function(String method, Map<String, dynamic>? params, String serverId)?
+  onGenericNotification;
+
+  /// Callback for handling tools list changed notifications
+  void Function()? onToolsListChanged;
+
+  /// Callback for handling resources list changed notifications
+  void Function()? onResourcesListChanged;
+
   /// Completer for pending elicitation responses
   Completer<ElicitResult>? _pendingElicitationCompleter;
 
+  /// Server ID for identifying this connection in notifications
+  String? _serverId;
+
   McpClientService({required this.serverUrl, this.headers});
+
+  /// Set the server ID for identifying this connection in notifications
+  void setServerId(String serverId) {
+    _serverId = serverId;
+  }
 
   /// Initialize connection to the MCP server
   Future<void> initialize() async {
@@ -184,6 +226,9 @@ class McpClientService {
       // Connect to the server
       await _client!.connect(_transport!);
 
+      // Set up notification handlers after connecting
+      _setupNotificationHandlers();
+
       final serverVersion = _client!.getServerVersion();
       print('MCP: Connected to server at $serverUrl');
       print(
@@ -193,6 +238,70 @@ class McpClientService {
       print('MCP: Failed to initialize: $e');
       throw Exception('Failed to initialize MCP server: $e');
     }
+  }
+
+  /// Set up notification handlers for the MCP client
+  void _setupNotificationHandlers() {
+    if (_client == null) return;
+
+    // Handle tools list changed notifications
+    _client!.setNotificationHandler<JsonRpcToolListChangedNotification>(
+      Method.notificationsToolsListChanged,
+      (notification) async {
+        print('MCP: Tools list changed');
+        onToolsListChanged?.call();
+      },
+      (params, meta) => JsonRpcToolListChangedNotification.fromJson({
+        'params': params,
+        if (meta != null) '_meta': meta,
+      }),
+    );
+
+    // Handle resources list changed notifications
+    _client!.setNotificationHandler<JsonRpcResourceListChangedNotification>(
+      Method.notificationsResourcesListChanged,
+      (notification) async {
+        print('MCP: Resources list changed');
+        onResourcesListChanged?.call();
+      },
+      (params, meta) => JsonRpcResourceListChangedNotification.fromJson({
+        'params': params,
+        if (meta != null) '_meta': meta,
+      }),
+    );
+
+    // Use fallback notification handler to catch any other notifications
+    // (including progress if it comes through a different channel)
+    _client!.fallbackNotificationHandler = (notification) async {
+      print('MCP: Received notification: ${notification.method}');
+
+      // Handle progress notifications
+      if (notification.method == Method.notificationsProgress) {
+        final params = notification.params;
+        if (params != null) {
+          final progressNotification = McpProgressNotification(
+            progressToken: params['progressToken'],
+            progress: params['progress'] as num,
+            total: params['total'] as num?,
+            message: params['message'] as String?,
+            serverId: _serverId ?? serverUrl,
+          );
+          print(
+            'MCP: Progress notification: ${progressNotification.progress}/${progressNotification.total ?? '?'}',
+          );
+          onProgressNotification?.call(progressNotification);
+        }
+        return;
+      }
+
+      // For all other notifications, forward to generic handler
+      // This includes any custom/unknown notification methods
+      onGenericNotification?.call(
+        notification.method,
+        notification.params,
+        _serverId ?? serverUrl,
+      );
+    };
   }
 
   /// Handle sampling request from the server
@@ -429,11 +538,31 @@ class McpClientService {
 
       // Use a very long timeout in mcp_dart (we manage timeout ourselves)
       // Pass our abort signal so we can cancel if our timeout fires
+      // Also set up progress callback to forward progress notifications
       final result = await _client!.callTool(
         CallToolRequest(name: toolName, arguments: arguments),
         options: RequestOptions(
           timeout: const Duration(hours: 1), // Let our timer handle it
           signal: abortController.signal,
+          resetTimeoutOnProgress: true, // Let mcp_dart also reset on progress
+          onprogress: (progress) {
+            // Extend our custom timeout when we receive progress
+            // This keeps the request alive during long-running operations
+            timeoutState.extendTimeout(_extendedTimeout);
+
+            // Forward progress notification to callback
+            final progressNotification = McpProgressNotification(
+              progressToken: requestId,
+              progress: progress.progress,
+              total: progress.total,
+              message: progress.message,
+              serverId: _serverId ?? serverUrl,
+            );
+            print(
+              'MCP: Tool $toolName progress: ${progress.progress}/${progress.total ?? '?'}${progress.message != null ? ' - ${progress.message}' : ''}',
+            );
+            onProgressNotification?.call(progressNotification);
+          },
         ),
       );
 
@@ -468,7 +597,9 @@ class McpClientService {
 
   /// Extend timeouts for all active requests (called when sampling/elicitation starts)
   void _extendAllActiveTimeouts() {
-    print('MCP: Extending timeouts for ${_activeRequests.length} active request(s)');
+    print(
+      'MCP: Extending timeouts for ${_activeRequests.length} active request(s)',
+    );
     for (final state in _activeRequests.values) {
       state.extendTimeout(_extendedTimeout);
     }
