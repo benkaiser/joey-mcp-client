@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
+import 'tool_result_images.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -241,6 +242,12 @@ class MessageBubble extends StatelessWidget {
                                       }
                                     },
                                   ),
+                                // Render images from imageData if present
+                                if (message.imageData != null)
+                                  ToolResultImages(
+                                    imageDataJson: message.imageData!,
+                                    messageId: message.id,
+                                  ),
                                 if (isStreaming) ...[
                                   const SizedBox(height: 4),
                                   Container(
@@ -304,6 +311,8 @@ class MessageBubble extends StatelessWidget {
       ),
     );
   }
+
+
 
   Widget _buildActionButton({
     required BuildContext context,

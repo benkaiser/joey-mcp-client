@@ -504,6 +504,7 @@ class ChatService {
     required String model,
     required List<Message> messages,
     int maxIterations = 10,
+    bool modelSupportsImages = false,
   }) async {
     int iterationCount = 0;
 
@@ -524,13 +525,44 @@ class ChatService {
 
       // Build API messages from current message list, prepending system prompt
       // Filter out elicitation messages (they return null from toApiMessage)
-      final apiMessages = [
+      final apiMessages = <Map<String, dynamic>>[
         {'role': 'system', 'content': systemPrompt},
-        ...messages
-            .map<Map<String, dynamic>?>((msg) => msg.toApiMessage())
-            .where((msg) => msg != null)
-            .cast<Map<String, dynamic>>(),
       ];
+      for (final msg in messages) {
+        final apiMsg = msg.toApiMessage();
+        if (apiMsg == null) continue;
+        apiMessages.add(apiMsg);
+
+        // If the model supports images and this tool result has image data,
+        // inject a user message with the images so the LLM can see them
+        if (modelSupportsImages &&
+            msg.role == MessageRole.tool &&
+            msg.imageData != null) {
+          try {
+            final images = jsonDecode(msg.imageData!) as List;
+            if (images.isNotEmpty) {
+              final contentParts = <Map<String, dynamic>>[
+                {
+                  'type': 'text',
+                  'text':
+                      '[Images returned by tool "${msg.toolName ?? 'unknown'}"]',
+                },
+              ];
+              for (final img in images) {
+                final data = img['data'] as String;
+                final mimeType = img['mimeType'] as String? ?? 'image/png';
+                contentParts.add({
+                  'type': 'image_url',
+                  'image_url': {'url': 'data:$mimeType;base64,$data'},
+                });
+              }
+              apiMessages.add({'role': 'user', 'content': contentParts});
+            }
+          } catch (e) {
+            print('ChatService: Failed to inject images: $e');
+          }
+        }
+      }
 
       print(
         'ChatService: Iteration $iterationCount with ${apiMessages.length} messages',
@@ -640,6 +672,7 @@ class ChatService {
             timestamp: DateTime.now(),
             toolCallId: result['toolId'] as String,
             toolName: result['toolName'] as String,
+            imageData: result['imageData'] as String?,
           );
 
           _eventController.add(MessageCreated(message: toolMessage));
@@ -762,6 +795,7 @@ class ChatService {
 
       // Find which MCP server has this tool and execute it
       String? result;
+      String? imageDataJson;
       for (final entry in _mcpTools.entries) {
         final serverId = entry.key;
         final tools = entry.value;
@@ -771,7 +805,26 @@ class ChatService {
           try {
             if (mcpClient != null) {
               final toolResult = await mcpClient.callTool(toolName, toolArgs);
-              result = toolResult.content.map((c) => c.text ?? '').join('\n');
+              // Extract text content
+              final textParts = toolResult.content
+                  .where((c) => c.type == 'text' && c.text != null)
+                  .map((c) => c.text!)
+                  .toList();
+              result = textParts.join('\n');
+
+              // Extract image content
+              final images = toolResult.content
+                  .where((c) => c.type == 'image' && c.data != null)
+                  .map(
+                    (c) => {
+                      'data': c.data as String,
+                      'mimeType': c.mimeType ?? 'image/png',
+                    },
+                  )
+                  .toList();
+              if (images.isNotEmpty) {
+                imageDataJson = jsonEncode(images);
+              }
             }
           } catch (e) {
             result = 'Error executing tool: $e';
@@ -791,7 +844,12 @@ class ChatService {
         ),
       );
 
-      return {'toolId': toolId, 'toolName': toolName, 'result': finalResult};
+      return {
+        'toolId': toolId,
+        'toolName': toolName,
+        'result': finalResult,
+        if (imageDataJson != null) 'imageData': imageDataJson,
+      };
     }).toList();
 
     return await Future.wait(toolResultFutures);

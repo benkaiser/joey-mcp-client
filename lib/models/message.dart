@@ -24,6 +24,8 @@ class Message {
   elicitationData; // JSON string of elicitation request for elicitation role messages
   final String?
   notificationData; // JSON string of MCP notification data for mcpNotification role messages
+  final String?
+  imageData; // JSON array of image objects [{data: base64, mimeType: string}]
 
   Message({
     required this.id,
@@ -37,6 +39,7 @@ class Message {
     this.toolName,
     this.elicitationData,
     this.notificationData,
+    this.imageData,
   });
 
   Map<String, dynamic> toMap() {
@@ -52,6 +55,7 @@ class Message {
       'toolName': toolName,
       'elicitationData': elicitationData,
       'notificationData': notificationData,
+      'imageData': imageData,
     };
   }
 
@@ -68,6 +72,7 @@ class Message {
       toolName: map['toolName'],
       elicitationData: map['elicitationData'],
       notificationData: map['notificationData'],
+      imageData: map['imageData'],
     );
   }
 
@@ -83,6 +88,7 @@ class Message {
     String? toolName,
     String? elicitationData,
     String? notificationData,
+    String? imageData,
   }) {
     return Message(
       id: id ?? this.id,
@@ -96,6 +102,7 @@ class Message {
       toolName: toolName ?? this.toolName,
       elicitationData: elicitationData ?? this.elicitationData,
       notificationData: notificationData ?? this.notificationData,
+      imageData: imageData ?? this.imageData,
     );
   }
 

@@ -1,10 +1,11 @@
 ---
 # joey_mcp_client_flutter-mac5
 title: MCP support image content in responses
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-02-05T13:55:42Z
-updated_at: 2026-02-05T13:55:42Z
+updated_at: 2026-02-08T10:36:49Z
 ---
 
 Add support for rendering image content in MCP tool responses and messages.

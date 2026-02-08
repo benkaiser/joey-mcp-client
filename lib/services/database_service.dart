@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 12,
+      version: 13,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -52,6 +52,7 @@ class DatabaseService {
         toolName TEXT,
         elicitationData TEXT,
         notificationData TEXT,
+        imageData TEXT,
         FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
       )
     ''');
@@ -215,6 +216,12 @@ class DatabaseService {
       // Add sessionId column for MCP session resumption
       await db.execute('''
         ALTER TABLE conversation_mcp_servers ADD COLUMN sessionId TEXT
+      ''');
+    }
+    if (oldVersion < 13) {
+      // Add imageData column for MCP image content in tool results
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN imageData TEXT
       ''');
     }
   }

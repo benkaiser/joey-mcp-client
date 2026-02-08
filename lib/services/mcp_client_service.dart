@@ -85,14 +85,19 @@ class McpContent {
   final String type;
   final String? text;
   final dynamic data;
+  final String? mimeType;
 
-  McpContent({required this.type, this.text, this.data});
+  McpContent({required this.type, this.text, this.data, this.mimeType});
 
   factory McpContent.fromMcpDartContent(Content content) {
     if (content is TextContent) {
       return McpContent(type: 'text', text: content.text);
     } else if (content is ImageContent) {
-      return McpContent(type: 'image', data: content.data);
+      return McpContent(
+        type: 'image',
+        data: content.data,
+        mimeType: content.mimeType,
+      );
     } else if (content is EmbeddedResource) {
       return McpContent(type: 'resource', data: content.resource);
     }
@@ -191,6 +196,9 @@ class McpClientService {
 
   /// Callback for handling OAuth authentication required
   void Function(String serverUrl)? onAuthRequired;
+
+  /// Callback for when the session is re-established after an invalid session error
+  void Function(String? newSessionId)? onSessionReestablished;
 
   /// Completer for pending elicitation responses
   Completer<ElicitResult>? _pendingElicitationCompleter;
@@ -565,8 +573,74 @@ class McpClientService {
     }
   }
 
+  /// Check if an error indicates an invalid/expired session
+  bool _isInvalidSessionError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return msg.contains('no valid session id') ||
+        (msg.contains('session') &&
+            (msg.contains('400') || msg.contains('404')));
+  }
+
+  /// Re-initialize the connection with a fresh session
+  Future<void> _reinitialize() async {
+    print(
+      'MCP: Re-initializing connection to $serverUrl with fresh session...',
+    );
+    // Close old client/transport, ignoring errors (e.g. "Cannot add new events
+    // after calling close" when client.close() already closed the transport).
+    try {
+      await _client?.close();
+    } catch (e) {
+      print('MCP: Ignoring error closing old client: $e');
+    }
+    try {
+      await _transport?.close();
+    } catch (e) {
+      print('MCP: Ignoring error closing old transport: $e');
+    }
+    _client = null;
+    _transport = null;
+    await initialize(); // Fresh session, no session ID
+    onSessionReestablished?.call(sessionId);
+  }
+
   /// Call a tool on the MCP server
   Future<McpToolResult> callTool(
+    String toolName,
+    Map<String, dynamic> arguments,
+  ) async {
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
+
+    try {
+      return await _callToolInternal(toolName, arguments);
+    } catch (e) {
+      // If the error is due to an invalid session, re-initialize and retry once
+      if (_isInvalidSessionError(e)) {
+        print('MCP: Invalid session detected, re-initializing...');
+        try {
+          await _reinitialize();
+          return await _callToolInternal(toolName, arguments);
+        } catch (retryError) {
+          print('MCP: Retry after re-initialization also failed: $retryError');
+          return McpToolResult(
+            content: [
+              McpContent(
+                type: 'text',
+                text: 'Error: Failed to reconnect to MCP server: $retryError',
+              ),
+            ],
+            isError: true,
+          );
+        }
+      }
+      rethrow;
+    }
+  }
+
+  /// Internal implementation of callTool (used by callTool for retry logic)
+  Future<McpToolResult> _callToolInternal(
     String toolName,
     Map<String, dynamic> arguments,
   ) async {
@@ -637,11 +711,20 @@ class McpClientService {
 
       // Check if this is an MCP error that we should handle specially
       if (e is McpError) {
-        // Return error as a tool result
+        // Rethrow session errors so callTool's retry logic can handle them
+        if (_isInvalidSessionError(e)) {
+          rethrow;
+        }
+        // Return other MCP errors as a tool result
         return McpToolResult(
           content: [McpContent(type: 'text', text: 'Error: ${e.message}')],
           isError: true,
         );
+      }
+
+      // Also rethrow generic session errors for retry
+      if (_isInvalidSessionError(e)) {
+        rethrow;
       }
 
       throw Exception('Failed to call tool $toolName: $e');
