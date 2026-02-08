@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 11,
+      version: 12,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -80,6 +80,7 @@ class DatabaseService {
       CREATE TABLE conversation_mcp_servers (
         conversationId TEXT NOT NULL,
         mcpServerId TEXT NOT NULL,
+        sessionId TEXT,
         PRIMARY KEY (conversationId, mcpServerId),
         FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE,
         FOREIGN KEY (mcpServerId) REFERENCES mcp_servers (id) ON DELETE CASCADE
@@ -208,6 +209,12 @@ class DatabaseService {
       // Add OAuth client secret column
       await db.execute('''
         ALTER TABLE mcp_servers ADD COLUMN oauthClientSecret TEXT
+      ''');
+    }
+    if (oldVersion < 12) {
+      // Add sessionId column for MCP session resumption
+      await db.execute('''
+        ALTER TABLE conversation_mcp_servers ADD COLUMN sessionId TEXT
       ''');
     }
   }
@@ -365,5 +372,55 @@ class DatabaseService {
       [conversationId],
     );
     return result.map((map) => McpServer.fromMap(map)).toList();
+  }
+
+  /// Get the stored MCP session ID for a specific conversation-server pair
+  Future<String?> getMcpSessionId(
+    String conversationId,
+    String mcpServerId,
+  ) async {
+    final db = await database;
+    final result = await db.query(
+      'conversation_mcp_servers',
+      columns: ['sessionId'],
+      where: 'conversationId = ? AND mcpServerId = ?',
+      whereArgs: [conversationId, mcpServerId],
+    );
+    if (result.isNotEmpty) {
+      return result.first['sessionId'] as String?;
+    }
+    return null;
+  }
+
+  /// Update the MCP session ID for a specific conversation-server pair
+  Future<void> updateMcpSessionId(
+    String conversationId,
+    String mcpServerId,
+    String? sessionId,
+  ) async {
+    final db = await database;
+    await db.update(
+      'conversation_mcp_servers',
+      {'sessionId': sessionId},
+      where: 'conversationId = ? AND mcpServerId = ?',
+      whereArgs: [conversationId, mcpServerId],
+    );
+  }
+
+  /// Get all stored MCP session IDs for a conversation
+  Future<Map<String, String?>> getAllMcpSessionIds(
+    String conversationId,
+  ) async {
+    final db = await database;
+    final result = await db.query(
+      'conversation_mcp_servers',
+      columns: ['mcpServerId', 'sessionId'],
+      where: 'conversationId = ?',
+      whereArgs: [conversationId],
+    );
+    return {
+      for (final row in result)
+        row['mcpServerId'] as String: row['sessionId'] as String?,
+    };
   }
 }

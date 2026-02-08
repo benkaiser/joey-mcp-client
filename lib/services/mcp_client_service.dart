@@ -140,6 +140,9 @@ class McpClientService {
   McpClient? _client;
   StreamableHttpClientTransport? _transport;
 
+  /// Get the current MCP session ID (assigned by the server after initialization)
+  String? get sessionId => _transport?.sessionId;
+
   /// Track active tool requests for timeout management
   final Map<int, _RequestTimeoutState> _activeRequests = {};
   int _nextRequestId = 0;
@@ -207,7 +210,8 @@ class McpClientService {
   }
 
   /// Initialize connection to the MCP server
-  Future<void> initialize() async {
+  /// If [sessionId] is provided, attempts to resume a previous session.
+  Future<void> initialize({String? sessionId}) async {
     try {
       // Build request init options with headers if provided
       Map<String, dynamic>? requestInit;
@@ -222,6 +226,7 @@ class McpClientService {
         opts: StreamableHttpClientTransportOptions(
           requestInit: requestInit,
           authProvider: oauthProvider,
+          sessionId: sessionId,
         ),
       );
 
@@ -253,10 +258,28 @@ class McpClientService {
       _setupNotificationHandlers();
 
       final serverVersion = _client!.getServerVersion();
-      print('MCP: Connected to server at $serverUrl');
+      print(
+        'MCP: Connected to server at $serverUrl${sessionId != null ? ' (resumed session)' : ''}',
+      );
       print(
         'MCP: Server info: ${serverVersion?.name} v${serverVersion?.version}',
       );
+      if (this.sessionId != null) {
+        print('MCP: Session ID: ${this.sessionId}');
+      }
+    } on StreamableHttpError catch (e) {
+      // Handle 404: session expired, retry without session ID
+      if (e.code == 404 && sessionId != null) {
+        print('MCP: Session expired (404), retrying with fresh session...');
+        await _client?.close();
+        await _transport?.close();
+        _client = null;
+        _transport = null;
+        // Retry initialization without session ID
+        return initialize();
+      }
+      print('MCP: HTTP error during initialization: ${e.code} ${e.message}');
+      throw Exception('Failed to initialize MCP server: $e');
     } on UnauthorizedError catch (e) {
       print('MCP: Authorization required for $serverUrl: $e');
       // Signal that OAuth is needed

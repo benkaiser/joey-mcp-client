@@ -149,11 +149,31 @@ class _ChatScreenState extends State<ChatScreen> {
         _handleServerNeedsOAuth(server);
       };
 
-      await client.initialize();
+      // Look up stored session ID for resumption
+      final storedSessionId = await DatabaseService.instance.getMcpSessionId(
+        widget.conversation.id,
+        server.id,
+      );
+      if (storedSessionId != null) {
+        debugPrint('MCP: Attempting to resume session for ${server.name}');
+      }
+
+      await client.initialize(sessionId: storedSessionId);
       final tools = await client.listTools();
 
       _mcpClients[server.id] = client;
       _mcpTools[server.id] = tools;
+
+      // Persist the session ID (may be new or same as stored)
+      final newSessionId = client.sessionId;
+      if (newSessionId != storedSessionId) {
+        await DatabaseService.instance.updateMcpSessionId(
+          widget.conversation.id,
+          server.id,
+          newSessionId,
+        );
+        debugPrint('MCP: Stored session ID for ${server.name}: $newSessionId');
+      }
 
       // Update server OAuth status if it was previously pending
       if (server.oauthStatus == McpOAuthStatus.required ||

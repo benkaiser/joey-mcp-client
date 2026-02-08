@@ -1,10 +1,11 @@
 ---
 # joey_mcp_client_flutter-bmf7
 title: MCP session resumption via stored session ID
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-02-05T13:55:35Z
-updated_at: 2026-02-05T13:55:35Z
+updated_at: 2026-02-08T10:18:22Z
 ---
 
 Implement MCP session resumption by storing the session ID on conversations and reusing it when re-establishing connections.
