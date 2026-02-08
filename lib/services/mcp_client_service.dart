@@ -7,9 +7,9 @@ import 'mcp_oauth_service.dart';
 class McpAuthRequiredException implements Exception {
   final String serverUrl;
   final String message;
-  
+
   McpAuthRequiredException(this.serverUrl, [this.message = 'OAuth authentication required']);
-  
+
   @override
   String toString() => 'McpAuthRequiredException: $message (server: $serverUrl)';
 }
@@ -185,7 +185,7 @@ class McpClientService {
 
   /// Callback for handling resources list changed notifications
   void Function()? onResourcesListChanged;
-  
+
   /// Callback for handling OAuth authentication required
   void Function(String serverUrl)? onAuthRequired;
 
@@ -196,7 +196,7 @@ class McpClientService {
   String? _serverId;
 
   McpClientService({
-    required this.serverUrl, 
+    required this.serverUrl,
     this.headers,
     this.oauthProvider,
   });
@@ -265,7 +265,7 @@ class McpClientService {
     } catch (e) {
       print('MCP: Failed to initialize: $e');
       // Check if this is an auth-related error
-      if (e.toString().contains('401') || 
+      if (e.toString().contains('401') ||
           e.toString().toLowerCase().contains('unauthorized')) {
         onAuthRequired?.call(serverUrl);
         throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');

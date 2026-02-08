@@ -55,18 +55,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _respondedElicitationIds = {};
   // Track MCP progress notifications
   McpProgressNotificationReceived? _currentProgress;
-  
+
   // MCP OAuth support
   final McpOAuthService _mcpOAuthService = McpOAuthService();
   final AppLinks _appLinks = AppLinks();
   StreamSubscription? _deepLinkSubscription;
-  
+
   /// Servers that need OAuth authentication
   final List<McpServer> _serversNeedingOAuth = [];
-  
+
   /// OAuth provider instances for each server
   final Map<String, McpOAuthClientProvider> _oauthProviders = {};
-  
+
   /// Track OAuth status for each server
   final Map<String, McpOAuthCardStatus> _serverOAuthStatus = {};
 
@@ -78,18 +78,18 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadShowThinking();
     _initMcpOAuthDeepLinkListener();
   }
-  
+
   /// Initialize deep link listener for MCP OAuth callbacks
   void _initMcpOAuthDeepLinkListener() {
     _deepLinkSubscription = _appLinks.uriLinkStream.listen(
       (Uri uri) {
         // Listen for MCP OAuth callback
         final isCustomScheme = uri.scheme == 'joey' && uri.host == 'mcp-oauth';
-        final isHttpsCallback = 
+        final isHttpsCallback =
             uri.scheme == 'https' &&
             uri.host == 'openrouterauth.benkaiser.dev' &&
             uri.path == '/api/mcp-oauth';
-        
+
         if (isCustomScheme || isHttpsCallback) {
           _handleMcpOAuthCallback(uri);
         }
@@ -126,44 +126,44 @@ class _ChatScreenState extends State<ChatScreen> {
       debugPrint('Failed to load MCP servers: $e');
     }
   }
-  
+
   /// Initialize a single MCP server, handling OAuth if needed
   Future<void> _initializeMcpServer(McpServer server) async {
     try {
       // Create OAuth provider if server has OAuth tokens
       McpOAuthClientProvider? oauthProvider;
-      
+
       if (server.oauthStatus != McpOAuthStatus.none || server.oauthTokens != null) {
         oauthProvider = _createOAuthProvider(server);
         _oauthProviders[server.id] = oauthProvider;
       }
-      
+
       final client = McpClientService(
         serverUrl: server.url,
         headers: server.headers,
         oauthProvider: oauthProvider,
       );
-      
+
       // Set up auth required callback
       client.onAuthRequired = (serverUrl) {
         _handleServerNeedsOAuth(server);
       };
-      
+
       await client.initialize();
       final tools = await client.listTools();
 
       _mcpClients[server.id] = client;
       _mcpTools[server.id] = tools;
-      
+
       // Update server OAuth status if it was previously pending
-      if (server.oauthStatus == McpOAuthStatus.required || 
+      if (server.oauthStatus == McpOAuthStatus.required ||
           server.oauthStatus == McpOAuthStatus.pending) {
         final updatedServer = server.copyWith(
           oauthStatus: McpOAuthStatus.authenticated,
           updatedAt: DateTime.now(),
         );
         await DatabaseService.instance.updateMcpServer(updatedServer);
-        
+
         // Update local state
         final index = _mcpServers.indexWhere((s) => s.id == server.id);
         if (index >= 0) {
@@ -178,16 +178,16 @@ class _ChatScreenState extends State<ChatScreen> {
       _handleServerNeedsOAuth(server);
     } catch (e) {
       debugPrint('Failed to initialize MCP server ${server.name}: $e');
-      
+
       // Check if this looks like an auth error
-      if (e.toString().contains('401') || 
+      if (e.toString().contains('401') ||
           e.toString().toLowerCase().contains('unauthorized') ||
           e.toString().toLowerCase().contains('authentication')) {
         _handleServerNeedsOAuth(server);
       }
     }
   }
-  
+
   /// Create an OAuth provider for a server
   McpOAuthClientProvider _createOAuthProvider(McpServer server) {
     // Convert stored tokens if available
@@ -201,7 +201,7 @@ class _ChatScreenState extends State<ChatScreen> {
         scope: server.oauthTokens!.scope,
       );
     }
-    
+
     return McpOAuthClientProvider(
       serverUrl: server.url,
       clientId: server.oauthClientId,
@@ -219,7 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
           (s) => s.url == serverUrl,
           orElse: () => server,
         );
-        
+
         if (currentServer.oauthTokens != null) {
           return McpOAuthTokens(
             accessToken: currentServer.oauthTokens!.accessToken,
@@ -238,7 +238,7 @@ class _ChatScreenState extends State<ChatScreen> {
           (s) => s.url == serverUrl,
           orElse: () => server,
         );
-        
+
         McpServerOAuthTokens? storedTokens;
         if (tokens != null) {
           storedTokens = McpServerOAuthTokens(
@@ -249,21 +249,21 @@ class _ChatScreenState extends State<ChatScreen> {
             scope: tokens.scope,
           );
         }
-        
+
         final updatedServer = currentServer.copyWith(
-          oauthStatus: tokens != null 
-              ? McpOAuthStatus.authenticated 
+          oauthStatus: tokens != null
+              ? McpOAuthStatus.authenticated
               : McpOAuthStatus.none,
           oauthTokens: storedTokens,
           clearOAuthTokens: tokens == null,
           updatedAt: DateTime.now(),
         );
-        
+
         await DatabaseService.instance.updateMcpServer(updatedServer);
       },
     );
   }
-  
+
   /// Handle when a server indicates it needs OAuth
   void _handleServerNeedsOAuth(McpServer server) {
     // Update local server status
@@ -273,7 +273,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _serversNeedingOAuth.add(_mcpServers[index]);
         _serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
       });
-      
+
       // Update server in database
       final updatedServer = server.copyWith(
         oauthStatus: McpOAuthStatus.required,
@@ -282,13 +282,13 @@ class _ChatScreenState extends State<ChatScreen> {
       DatabaseService.instance.updateMcpServer(updatedServer);
     }
   }
-  
+
   /// Handle MCP OAuth callback from deep link
   Future<void> _handleMcpOAuthCallback(Uri uri) async {
     final code = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
     final error = uri.queryParameters['error'];
-    
+
     if (error != null) {
       debugPrint('MCP OAuth error: $error');
       // Find the server that was authenticating and mark as failed
@@ -302,17 +302,17 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    
+
     if (code == null || state == null) {
       debugPrint('MCP OAuth callback missing code or state');
       return;
     }
-    
+
     try {
       // Find which server this is for to get client secret
       final pendingState = _mcpOAuthService.getPendingState(state);
       McpServer? server;
-      
+
       if (pendingState != null) {
         server = _mcpServers.firstWhere(
           (s) => s.url == pendingState.resourceUrl,
@@ -321,7 +321,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       }
-      
+
       // Exchange code for tokens
       final tokens = await _mcpOAuthService.exchangeCodeForTokens(
         authorizationCode: code,
@@ -329,7 +329,7 @@ class _ChatScreenState extends State<ChatScreen> {
         clientId: server?.oauthClientId,
         clientSecret: server?.oauthClientSecret,
       );
-      
+
       // Use the server we found, or try to find it again
       if (pendingState == null) {
         // Try to find by URL in our servers
@@ -341,7 +341,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         return;
       }
-      
+
       if (server == null) {
         server = _mcpServers.firstWhere(
           (s) => s.url == pendingState.resourceUrl,
@@ -350,11 +350,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       }
-      
+
       await _completeServerOAuth(server, tokens);
     } catch (e) {
       debugPrint('MCP OAuth token exchange failed: $e');
-      
+
       // Mark the in-progress server as failed
       for (final entry in _serverOAuthStatus.entries) {
         if (entry.value == McpOAuthCardStatus.inProgress) {
@@ -364,7 +364,7 @@ class _ChatScreenState extends State<ChatScreen> {
           break;
         }
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -375,7 +375,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
-  
+
   /// Complete OAuth for a server after successful token exchange
   Future<void> _completeServerOAuth(McpServer server, McpOAuthTokens tokens) async {
     // Update OAuth provider with new tokens
@@ -383,7 +383,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (provider != null) {
       await provider.updateTokens(tokens);
     }
-    
+
     // Save tokens to server
     final storedTokens = McpServerOAuthTokens(
       accessToken: tokens.accessToken,
@@ -392,15 +392,15 @@ class _ChatScreenState extends State<ChatScreen> {
       tokenType: tokens.tokenType,
       scope: tokens.scope,
     );
-    
+
     final updatedServer = server.copyWith(
       oauthStatus: McpOAuthStatus.authenticated,
       oauthTokens: storedTokens,
       updatedAt: DateTime.now(),
     );
-    
+
     await DatabaseService.instance.updateMcpServer(updatedServer);
-    
+
     // Update local state
     final index = _mcpServers.indexWhere((s) => s.id == server.id);
     if (index >= 0) {
@@ -410,16 +410,16 @@ class _ChatScreenState extends State<ChatScreen> {
         _serversNeedingOAuth.removeWhere((s) => s.id == server.id);
       });
     }
-    
+
     // Re-initialize the server with the new tokens
     if (_mcpClients.containsKey(server.id)) {
       await _mcpClients[server.id]!.close();
       _mcpClients.remove(server.id);
       _mcpTools.remove(server.id);
     }
-    
+
     await _initializeMcpServer(updatedServer);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -429,7 +429,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
-  
+
   /// Start OAuth flow for a specific server
   Future<void> _startServerOAuth(McpServer server) async {
     try {
@@ -437,18 +437,18 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!_oauthProviders.containsKey(server.id)) {
         _oauthProviders[server.id] = _createOAuthProvider(server);
       }
-      
+
       setState(() {
         _serverOAuthStatus[server.id] = McpOAuthCardStatus.inProgress;
       });
-      
+
       // Build and launch auth URL
       final authUrl = await _mcpOAuthService.buildAuthorizationUrl(
         serverUrl: server.url,
         clientId: server.oauthClientId,
         clientSecret: server.oauthClientSecret,
       );
-      
+
       final uri = Uri.parse(authUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -460,7 +460,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _serverOAuthStatus[server.id] = McpOAuthCardStatus.failed;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -471,7 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
-  
+
   /// Skip OAuth for a server (remove from pending list)
   void _skipServerOAuth(McpServer server) {
     setState(() {
@@ -479,7 +479,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _serverOAuthStatus.remove(server.id);
     });
   }
-  
+
   /// Start OAuth for all servers that need it
   Future<void> _startAllServersOAuth() async {
     for (final server in _serversNeedingOAuth) {

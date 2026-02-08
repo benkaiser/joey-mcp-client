@@ -116,7 +116,7 @@ class McpOAuthCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             // Subtitle/Description
             Text(
               subtitle,
@@ -124,7 +124,7 @@ class McpOAuthCard extends StatelessWidget {
                 color: colorScheme.onSurface,
               ),
             ),
-            
+
             // Server URL
             const SizedBox(height: 8),
             Container(
@@ -155,7 +155,7 @@ class McpOAuthCard extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             // Actions
             const SizedBox(height: 16),
             _buildActions(context, colorScheme),
@@ -185,7 +185,7 @@ class McpOAuthCard extends StatelessWidget {
               ),
           ],
         );
-      
+
       case McpOAuthCardStatus.inProgress:
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -207,7 +207,7 @@ class McpOAuthCard extends StatelessWidget {
             ),
           ],
         );
-      
+
       case McpOAuthCardStatus.completed:
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -227,7 +227,7 @@ class McpOAuthCard extends StatelessWidget {
             ),
           ],
         );
-      
+
       case McpOAuthCardStatus.failed:
         return Row(
           mainAxisAlignment: MainAxisAlignment.end,

@@ -48,8 +48,8 @@ class McpServerOAuthTokens {
   factory McpServerOAuthTokens.fromJson(Map<String, dynamic> json) => McpServerOAuthTokens(
     accessToken: json['accessToken'] as String,
     refreshToken: json['refreshToken'] as String?,
-    expiresAt: json['expiresAt'] != null 
-        ? DateTime.parse(json['expiresAt'] as String) 
+        expiresAt: json['expiresAt'] != null
+            ? DateTime.parse(json['expiresAt'] as String)
         : null,
     tokenType: json['tokenType'] as String?,
     scope: json['scope'] as String?,
@@ -75,16 +75,16 @@ class McpServer {
   final bool isEnabled;
   final DateTime createdAt;
   final DateTime updatedAt;
-  
+
   /// OAuth status for this server
   final McpOAuthStatus oauthStatus;
-  
+
   /// Stored OAuth tokens (if authenticated)
   final McpServerOAuthTokens? oauthTokens;
-  
+
   /// Optional custom client ID for OAuth (if server requires registration)
   final String? oauthClientId;
-  
+
   /// Optional client secret for OAuth (not recommended - only for providers that don't support PKCE)
   final String? oauthClientSecret;
 
@@ -103,15 +103,15 @@ class McpServer {
   });
 
   /// Check if this server requires OAuth and is not yet authenticated
-  bool get needsOAuth => 
-      oauthStatus == McpOAuthStatus.required || 
+  bool get needsOAuth =>
+      oauthStatus == McpOAuthStatus.required ||
       oauthStatus == McpOAuthStatus.expired ||
       oauthStatus == McpOAuthStatus.failed;
 
   /// Check if this server has valid OAuth tokens
-  bool get hasValidOAuthTokens => 
-      oauthStatus == McpOAuthStatus.authenticated && 
-      oauthTokens != null && 
+  bool get hasValidOAuthTokens =>
+      oauthStatus == McpOAuthStatus.authenticated &&
+      oauthTokens != null &&
       !oauthTokens!.isExpired;
 
   Map<String, dynamic> toMap() {
