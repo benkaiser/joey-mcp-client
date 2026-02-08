@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
@@ -13,11 +15,13 @@ import '../services/default_model_service.dart';
 import '../services/database_service.dart';
 import '../services/mcp_client_service.dart';
 import '../services/chat_service.dart';
+import '../services/mcp_oauth_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/sampling_request_dialog.dart';
 import '../widgets/elicitation_url_card.dart';
 import '../widgets/elicitation_form_card.dart';
 import '../widgets/thinking_indicator.dart';
+import '../widgets/mcp_oauth_card.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -51,6 +55,20 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _respondedElicitationIds = {};
   // Track MCP progress notifications
   McpProgressNotificationReceived? _currentProgress;
+  
+  // MCP OAuth support
+  final McpOAuthService _mcpOAuthService = McpOAuthService();
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription? _deepLinkSubscription;
+  
+  /// Servers that need OAuth authentication
+  final List<McpServer> _serversNeedingOAuth = [];
+  
+  /// OAuth provider instances for each server
+  final Map<String, McpOAuthClientProvider> _oauthProviders = {};
+  
+  /// Track OAuth status for each server
+  final Map<String, McpOAuthCardStatus> _serverOAuthStatus = {};
 
   @override
   void initState() {
@@ -58,6 +76,28 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadModelDetails();
     _loadMcpServers();
     _loadShowThinking();
+    _initMcpOAuthDeepLinkListener();
+  }
+  
+  /// Initialize deep link listener for MCP OAuth callbacks
+  void _initMcpOAuthDeepLinkListener() {
+    _deepLinkSubscription = _appLinks.uriLinkStream.listen(
+      (Uri uri) {
+        // Listen for MCP OAuth callback
+        final isCustomScheme = uri.scheme == 'joey' && uri.host == 'mcp-oauth';
+        final isHttpsCallback = 
+            uri.scheme == 'https' &&
+            uri.host == 'openrouterauth.benkaiser.dev' &&
+            uri.path == '/api/mcp-oauth';
+        
+        if (isCustomScheme || isHttpsCallback) {
+          _handleMcpOAuthCallback(uri);
+        }
+      },
+      onError: (err) {
+        debugPrint('MCP OAuth deep link error: $err');
+      },
+    );
   }
 
   Future<void> _loadShowThinking() async {
@@ -80,22 +120,374 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Initialize MCP clients for each server
       for (final server in servers) {
-        try {
-          final client = McpClientService(
-            serverUrl: server.url,
-            headers: server.headers,
-          );
-          await client.initialize();
-          final tools = await client.listTools();
-
-          _mcpClients[server.id] = client;
-          _mcpTools[server.id] = tools;
-        } catch (e) {
-          debugPrint('Failed to initialize MCP server ${server.name}: $e');
-        }
+        await _initializeMcpServer(server);
       }
     } catch (e) {
       debugPrint('Failed to load MCP servers: $e');
+    }
+  }
+  
+  /// Initialize a single MCP server, handling OAuth if needed
+  Future<void> _initializeMcpServer(McpServer server) async {
+    try {
+      // Create OAuth provider if server has OAuth tokens
+      McpOAuthClientProvider? oauthProvider;
+      
+      if (server.oauthStatus != McpOAuthStatus.none || server.oauthTokens != null) {
+        oauthProvider = _createOAuthProvider(server);
+        _oauthProviders[server.id] = oauthProvider;
+      }
+      
+      final client = McpClientService(
+        serverUrl: server.url,
+        headers: server.headers,
+        oauthProvider: oauthProvider,
+      );
+      
+      // Set up auth required callback
+      client.onAuthRequired = (serverUrl) {
+        _handleServerNeedsOAuth(server);
+      };
+      
+      await client.initialize();
+      final tools = await client.listTools();
+
+      _mcpClients[server.id] = client;
+      _mcpTools[server.id] = tools;
+      
+      // Update server OAuth status if it was previously pending
+      if (server.oauthStatus == McpOAuthStatus.required || 
+          server.oauthStatus == McpOAuthStatus.pending) {
+        final updatedServer = server.copyWith(
+          oauthStatus: McpOAuthStatus.authenticated,
+          updatedAt: DateTime.now(),
+        );
+        await DatabaseService.instance.updateMcpServer(updatedServer);
+        
+        // Update local state
+        final index = _mcpServers.indexWhere((s) => s.id == server.id);
+        if (index >= 0) {
+          setState(() {
+            _mcpServers[index] = updatedServer;
+            _serverOAuthStatus.remove(server.id);
+          });
+        }
+      }
+    } on McpAuthRequiredException catch (e) {
+      debugPrint('MCP server ${server.name} requires OAuth: $e');
+      _handleServerNeedsOAuth(server);
+    } catch (e) {
+      debugPrint('Failed to initialize MCP server ${server.name}: $e');
+      
+      // Check if this looks like an auth error
+      if (e.toString().contains('401') || 
+          e.toString().toLowerCase().contains('unauthorized') ||
+          e.toString().toLowerCase().contains('authentication')) {
+        _handleServerNeedsOAuth(server);
+      }
+    }
+  }
+  
+  /// Create an OAuth provider for a server
+  McpOAuthClientProvider _createOAuthProvider(McpServer server) {
+    // Convert stored tokens if available
+    McpOAuthTokens? initialTokens;
+    if (server.oauthTokens != null) {
+      initialTokens = McpOAuthTokens(
+        accessToken: server.oauthTokens!.accessToken,
+        refreshToken: server.oauthTokens!.refreshToken,
+        expiresAt: server.oauthTokens!.expiresAt,
+        tokenType: server.oauthTokens!.tokenType,
+        scope: server.oauthTokens!.scope,
+      );
+    }
+    
+    return McpOAuthClientProvider(
+      serverUrl: server.url,
+      clientId: server.oauthClientId,
+      clientSecret: server.oauthClientSecret,
+      oauthService: _mcpOAuthService,
+      initialTokens: initialTokens,
+      onAuthRequired: (authUrl) async {
+        // Don't auto-launch - let user click the button in the banner
+        debugPrint('MCP OAuth required for ${server.name}: $authUrl');
+      },
+      loadTokens: (serverUrl) async {
+        // Reload server from database to get latest tokens
+        final servers = await DatabaseService.instance.getAllMcpServers();
+        final currentServer = servers.firstWhere(
+          (s) => s.url == serverUrl,
+          orElse: () => server,
+        );
+        
+        if (currentServer.oauthTokens != null) {
+          return McpOAuthTokens(
+            accessToken: currentServer.oauthTokens!.accessToken,
+            refreshToken: currentServer.oauthTokens!.refreshToken,
+            expiresAt: currentServer.oauthTokens!.expiresAt,
+            tokenType: currentServer.oauthTokens!.tokenType,
+            scope: currentServer.oauthTokens!.scope,
+          );
+        }
+        return null;
+      },
+      saveTokens: (serverUrl, tokens) async {
+        // Find and update the server with new tokens
+        final servers = await DatabaseService.instance.getAllMcpServers();
+        final currentServer = servers.firstWhere(
+          (s) => s.url == serverUrl,
+          orElse: () => server,
+        );
+        
+        McpServerOAuthTokens? storedTokens;
+        if (tokens != null) {
+          storedTokens = McpServerOAuthTokens(
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: tokens.expiresAt,
+            tokenType: tokens.tokenType,
+            scope: tokens.scope,
+          );
+        }
+        
+        final updatedServer = currentServer.copyWith(
+          oauthStatus: tokens != null 
+              ? McpOAuthStatus.authenticated 
+              : McpOAuthStatus.none,
+          oauthTokens: storedTokens,
+          clearOAuthTokens: tokens == null,
+          updatedAt: DateTime.now(),
+        );
+        
+        await DatabaseService.instance.updateMcpServer(updatedServer);
+      },
+    );
+  }
+  
+  /// Handle when a server indicates it needs OAuth
+  void _handleServerNeedsOAuth(McpServer server) {
+    // Update local server status
+    final index = _mcpServers.indexWhere((s) => s.id == server.id);
+    if (index >= 0 && !_serversNeedingOAuth.any((s) => s.id == server.id)) {
+      setState(() {
+        _serversNeedingOAuth.add(_mcpServers[index]);
+        _serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
+      });
+      
+      // Update server in database
+      final updatedServer = server.copyWith(
+        oauthStatus: McpOAuthStatus.required,
+        updatedAt: DateTime.now(),
+      );
+      DatabaseService.instance.updateMcpServer(updatedServer);
+    }
+  }
+  
+  /// Handle MCP OAuth callback from deep link
+  Future<void> _handleMcpOAuthCallback(Uri uri) async {
+    final code = uri.queryParameters['code'];
+    final state = uri.queryParameters['state'];
+    final error = uri.queryParameters['error'];
+    
+    if (error != null) {
+      debugPrint('MCP OAuth error: $error');
+      // Find the server that was authenticating and mark as failed
+      for (final entry in _serverOAuthStatus.entries) {
+        if (entry.value == McpOAuthCardStatus.inProgress) {
+          setState(() {
+            _serverOAuthStatus[entry.key] = McpOAuthCardStatus.failed;
+          });
+          break;
+        }
+      }
+      return;
+    }
+    
+    if (code == null || state == null) {
+      debugPrint('MCP OAuth callback missing code or state');
+      return;
+    }
+    
+    try {
+      // Find which server this is for to get client secret
+      final pendingState = _mcpOAuthService.getPendingState(state);
+      McpServer? server;
+      
+      if (pendingState != null) {
+        server = _mcpServers.firstWhere(
+          (s) => s.url == pendingState.resourceUrl,
+          orElse: () => _serversNeedingOAuth.firstWhere(
+            (s) => s.url == pendingState.resourceUrl,
+          ),
+        );
+      }
+      
+      // Exchange code for tokens
+      final tokens = await _mcpOAuthService.exchangeCodeForTokens(
+        authorizationCode: code,
+        state: state,
+        clientId: server?.oauthClientId,
+        clientSecret: server?.oauthClientSecret,
+      );
+      
+      // Use the server we found, or try to find it again
+      if (pendingState == null) {
+        // Try to find by URL in our servers
+        for (final s in _serversNeedingOAuth) {
+          if (_serverOAuthStatus[s.id] == McpOAuthCardStatus.inProgress) {
+            await _completeServerOAuth(s, tokens);
+            return;
+          }
+        }
+        return;
+      }
+      
+      if (server == null) {
+        server = _mcpServers.firstWhere(
+          (s) => s.url == pendingState.resourceUrl,
+          orElse: () => _serversNeedingOAuth.firstWhere(
+            (s) => s.url == pendingState.resourceUrl,
+          ),
+        );
+      }
+      
+      await _completeServerOAuth(server, tokens);
+    } catch (e) {
+      debugPrint('MCP OAuth token exchange failed: $e');
+      
+      // Mark the in-progress server as failed
+      for (final entry in _serverOAuthStatus.entries) {
+        if (entry.value == McpOAuthCardStatus.inProgress) {
+          setState(() {
+            _serverOAuthStatus[entry.key] = McpOAuthCardStatus.failed;
+          });
+          break;
+        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('OAuth failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Complete OAuth for a server after successful token exchange
+  Future<void> _completeServerOAuth(McpServer server, McpOAuthTokens tokens) async {
+    // Update OAuth provider with new tokens
+    final provider = _oauthProviders[server.id];
+    if (provider != null) {
+      await provider.updateTokens(tokens);
+    }
+    
+    // Save tokens to server
+    final storedTokens = McpServerOAuthTokens(
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      tokenType: tokens.tokenType,
+      scope: tokens.scope,
+    );
+    
+    final updatedServer = server.copyWith(
+      oauthStatus: McpOAuthStatus.authenticated,
+      oauthTokens: storedTokens,
+      updatedAt: DateTime.now(),
+    );
+    
+    await DatabaseService.instance.updateMcpServer(updatedServer);
+    
+    // Update local state
+    final index = _mcpServers.indexWhere((s) => s.id == server.id);
+    if (index >= 0) {
+      setState(() {
+        _mcpServers[index] = updatedServer;
+        _serverOAuthStatus[server.id] = McpOAuthCardStatus.completed;
+        _serversNeedingOAuth.removeWhere((s) => s.id == server.id);
+      });
+    }
+    
+    // Re-initialize the server with the new tokens
+    if (_mcpClients.containsKey(server.id)) {
+      await _mcpClients[server.id]!.close();
+      _mcpClients.remove(server.id);
+      _mcpTools.remove(server.id);
+    }
+    
+    await _initializeMcpServer(updatedServer);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connected to ${server.name}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+  
+  /// Start OAuth flow for a specific server
+  Future<void> _startServerOAuth(McpServer server) async {
+    try {
+      // Create provider if not exists
+      if (!_oauthProviders.containsKey(server.id)) {
+        _oauthProviders[server.id] = _createOAuthProvider(server);
+      }
+      
+      setState(() {
+        _serverOAuthStatus[server.id] = McpOAuthCardStatus.inProgress;
+      });
+      
+      // Build and launch auth URL
+      final authUrl = await _mcpOAuthService.buildAuthorizationUrl(
+        serverUrl: server.url,
+        clientId: server.oauthClientId,
+        clientSecret: server.oauthClientSecret,
+      );
+      
+      final uri = Uri.parse(authUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw Exception('Could not launch browser');
+      }
+    } catch (e) {
+      debugPrint('Failed to start OAuth for ${server.name}: $e');
+      setState(() {
+        _serverOAuthStatus[server.id] = McpOAuthCardStatus.failed;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start sign in: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Skip OAuth for a server (remove from pending list)
+  void _skipServerOAuth(McpServer server) {
+    setState(() {
+      _serversNeedingOAuth.removeWhere((s) => s.id == server.id);
+      _serverOAuthStatus.remove(server.id);
+    });
+  }
+  
+  /// Start OAuth for all servers that need it
+  Future<void> _startAllServersOAuth() async {
+    for (final server in _serversNeedingOAuth) {
+      if (_serverOAuthStatus[server.id] != McpOAuthCardStatus.inProgress) {
+        await _startServerOAuth(server);
+        // Only start one at a time to avoid confusion
+        break;
+      }
     }
   }
 
@@ -125,6 +517,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.dispose();
     _focusNode.dispose();
     _chatService?.dispose();
+    _deepLinkSubscription?.cancel();
     // Close all MCP clients
     for (final client in _mcpClients.values) {
       client.close();
@@ -811,6 +1204,18 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           body: Column(
             children: [
+              // Show OAuth banner if servers need authentication
+              if (_serversNeedingOAuth.isNotEmpty)
+                McpOAuthBanner(
+                  serversNeedingAuth: _serversNeedingOAuth,
+                  onAuthenticateAll: _startAllServersOAuth,
+                  onDismiss: () {
+                    setState(() {
+                      _serversNeedingOAuth.clear();
+                      _serverOAuthStatus.clear();
+                    });
+                  },
+                ),
               Expanded(
                 child: Consumer<ConversationProvider>(
                   builder: (context, provider, child) {

@@ -1,6 +1,18 @@
 import 'dart:async';
 import 'package:mcp_dart/mcp_dart.dart';
 import '../models/elicitation.dart' as app_elicitation;
+import 'mcp_oauth_service.dart';
+
+/// Exception thrown when an MCP server requires OAuth authentication
+class McpAuthRequiredException implements Exception {
+  final String serverUrl;
+  final String message;
+  
+  McpAuthRequiredException(this.serverUrl, [this.message = 'OAuth authentication required']);
+  
+  @override
+  String toString() => 'McpAuthRequiredException: $message (server: $serverUrl)';
+}
 
 /// Represents a progress notification from an MCP server
 class McpProgressNotification {
@@ -123,6 +135,7 @@ class _RequestTimeoutState {
 class McpClientService {
   final String serverUrl;
   final Map<String, String>? headers;
+  final McpOAuthClientProvider? oauthProvider;
 
   McpClient? _client;
   StreamableHttpClientTransport? _transport;
@@ -172,6 +185,9 @@ class McpClientService {
 
   /// Callback for handling resources list changed notifications
   void Function()? onResourcesListChanged;
+  
+  /// Callback for handling OAuth authentication required
+  void Function(String serverUrl)? onAuthRequired;
 
   /// Completer for pending elicitation responses
   Completer<ElicitResult>? _pendingElicitationCompleter;
@@ -179,7 +195,11 @@ class McpClientService {
   /// Server ID for identifying this connection in notifications
   String? _serverId;
 
-  McpClientService({required this.serverUrl, this.headers});
+  McpClientService({
+    required this.serverUrl, 
+    this.headers,
+    this.oauthProvider,
+  });
 
   /// Set the server ID for identifying this connection in notifications
   void setServerId(String serverId) {
@@ -195,11 +215,14 @@ class McpClientService {
         requestInit = {'headers': headers};
       }
 
-      // Create the HTTP transport with headers
+      // Create the HTTP transport with headers and OAuth provider
       final uri = Uri.parse(serverUrl);
       _transport = StreamableHttpClientTransport(
         uri,
-        opts: StreamableHttpClientTransportOptions(requestInit: requestInit),
+        opts: StreamableHttpClientTransportOptions(
+          requestInit: requestInit,
+          authProvider: oauthProvider,
+        ),
       );
 
       // Create the MCP client with our app info
@@ -234,8 +257,19 @@ class McpClientService {
       print(
         'MCP: Server info: ${serverVersion?.name} v${serverVersion?.version}',
       );
+    } on UnauthorizedError catch (e) {
+      print('MCP: Authorization required for $serverUrl: $e');
+      // Signal that OAuth is needed
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
     } catch (e) {
       print('MCP: Failed to initialize: $e');
+      // Check if this is an auth-related error
+      if (e.toString().contains('401') || 
+          e.toString().toLowerCase().contains('unauthorized')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
+      }
       throw Exception('Failed to initialize MCP server: $e');
     }
   }
@@ -636,4 +670,16 @@ class McpClientService {
       print('MCP: Error closing connection: $e');
     }
   }
+
+  /// Complete OAuth flow after user authorization
+  /// Call this after the user has authorized and you have the authorization code
+  Future<void> finishAuth(String authorizationCode) async {
+    if (_transport == null) {
+      throw Exception('Transport not initialized');
+    }
+    await _transport!.finishAuth(authorizationCode);
+  }
+
+  /// Get the OAuth provider (for checking auth status)
+  McpOAuthClientProvider? get authProvider => oauthProvider;
 }

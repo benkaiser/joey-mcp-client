@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../models/mcp_server.dart';
 import '../services/database_service.dart';
@@ -215,6 +216,8 @@ class _McpServerDialogState extends State<_McpServerDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _headersController;
+  late final TextEditingController _oauthClientIdController;
+  late final TextEditingController _oauthClientSecretController;
 
   @override
   void initState() {
@@ -228,6 +231,12 @@ class _McpServerDialogState extends State<_McpServerDialog> {
               .join('\n') ??
           '',
     );
+    _oauthClientIdController = TextEditingController(
+      text: widget.server?.oauthClientId ?? '',
+    );
+    _oauthClientSecretController = TextEditingController(
+      text: widget.server?.oauthClientSecret ?? '',
+    );
   }
 
   @override
@@ -235,6 +244,8 @@ class _McpServerDialogState extends State<_McpServerDialog> {
     _nameController.dispose();
     _urlController.dispose();
     _headersController.dispose();
+    _oauthClientIdController.dispose();
+    _oauthClientSecretController.dispose();
     super.dispose();
   }
 
@@ -264,6 +275,9 @@ class _McpServerDialogState extends State<_McpServerDialog> {
     }
 
     final now = DateTime.now();
+    final oauthClientId = _oauthClientIdController.text.trim();
+    final oauthClientSecret = _oauthClientSecretController.text.trim();
+
     final server = McpServer(
       id: widget.server?.id ?? const Uuid().v4(),
       name: name,
@@ -272,9 +286,22 @@ class _McpServerDialogState extends State<_McpServerDialog> {
       isEnabled: widget.server?.isEnabled ?? true,
       createdAt: widget.server?.createdAt ?? now,
       updatedAt: now,
+      oauthClientId: oauthClientId.isNotEmpty ? oauthClientId : null,
+      oauthClientSecret: oauthClientSecret.isNotEmpty
+          ? oauthClientSecret
+          : null,
+      oauthStatus: widget.server?.oauthStatus ?? McpOAuthStatus.none,
+      oauthTokens: widget.server?.oauthTokens,
     );
 
     Navigator.pop(context, server);
+  }
+
+  void _showOAuthInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => const _OAuthInfoDialog(),
+    );
   }
 
   @override
@@ -311,6 +338,77 @@ class _McpServerDialogState extends State<_McpServerDialog> {
               ),
               maxLines: 3,
             ),
+            const SizedBox(height: 24),
+            // OAuth Configuration Section
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: [
+                  Text(
+                    'OAuth Configuration (if required)',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.info_outline, size: 20),
+                    tooltip: 'Show OAuth setup information',
+                    onPressed: _showOAuthInfo,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _oauthClientIdController,
+              decoration: const InputDecoration(
+                labelText: 'OAuth Client ID (optional)',
+                hintText: 'your-app-client-id',
+                border: OutlineInputBorder(),
+                helperText: 'Leave empty to use default: joey-mcp-client',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _oauthClientSecretController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'OAuth Client Secret',
+                hintText: 'your-app-client-secret',
+                border: OutlineInputBorder(),
+                helperText:
+                    'Only required for OAuth providers that don\'t support PKCE without client secrets (like GitHub)',
+                helperMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber,
+                    color: Colors.orange[700],
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Warning: Storing client secrets in mobile apps is generally not advisable. Only use this if your OAuth provider requires it.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange[900]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -321,6 +419,203 @@ class _McpServerDialogState extends State<_McpServerDialog> {
         ),
         TextButton(onPressed: _save, child: const Text('Save')),
       ],
+    );
+  }
+}
+
+/// Dialog showing OAuth redirect URI information
+class _OAuthInfoDialog extends StatelessWidget {
+  static const String customSchemeUri = 'joey://mcp-oauth/callback';
+  static const String httpsUri =
+      'https://openrouterauth.benkaiser.dev/api/mcp-oauth';
+
+  const _OAuthInfoDialog();
+
+  void _copyToClipboard(BuildContext context, String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied to clipboard'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.info_outline, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          const Text('OAuth Setup Information'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'If the MCP server requires OAuth authentication, you\'ll need to register an OAuth application with the authorization provider (e.g., GitHub, Google).',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Redirect URIs',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'When registering your OAuth app, use one of these redirect URIs:',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+
+            // Custom Scheme URI
+            _buildUriCard(
+              context,
+              title: 'Custom Scheme (Preferred)',
+              uri: customSchemeUri,
+              description:
+                  'Use this if the OAuth provider supports custom URL schemes',
+              onCopy: () => _copyToClipboard(
+                context,
+                customSchemeUri,
+                'Custom scheme URI',
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // HTTPS URI
+            _buildUriCard(
+              context,
+              title: 'HTTPS Callback (Fallback)',
+              uri: httpsUri,
+              description: 'Use this if custom schemes are not supported',
+              onCopy: () => _copyToClipboard(context, httpsUri, 'HTTPS URI'),
+            ),
+
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        size: 20,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Setup steps:',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '1. Register an OAuth app with your provider\n'
+                    '2. Use one of the redirect URIs above\n'
+                    '3. Copy the Client ID and Client Secret (if required)\n'
+                    '4. Paste them in the fields above\n'
+                    '\n'
+                    'Note: If you don\'t provide a Client ID, the app will use the default: joey-mcp-client',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUriCard(
+    BuildContext context, {
+    required String title,
+    required String uri,
+    required String description,
+    required VoidCallback onCopy,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy, size: 18),
+                onPressed: onCopy,
+                tooltip: 'Copy to clipboard',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: SelectableText(
+              uri,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

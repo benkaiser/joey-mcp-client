@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 9,
+      version: 11,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -68,7 +68,11 @@ class DatabaseService {
         headers TEXT,
         isEnabled INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
+        updatedAt TEXT NOT NULL,
+        oauthStatus TEXT DEFAULT 'none',
+        oauthTokens TEXT,
+        oauthClientId TEXT,
+        oauthClientSecret TEXT
       )
     ''');
 
@@ -186,6 +190,24 @@ class DatabaseService {
       // Add notificationData column to messages table for MCP server notifications
       await db.execute('''
         ALTER TABLE messages ADD COLUMN notificationData TEXT
+      ''');
+    }
+    if (oldVersion < 10) {
+      // Add OAuth columns to mcp_servers table
+      await db.execute('''
+        ALTER TABLE mcp_servers ADD COLUMN oauthStatus TEXT DEFAULT 'none'
+      ''');
+      await db.execute('''
+        ALTER TABLE mcp_servers ADD COLUMN oauthTokens TEXT
+      ''');
+      await db.execute('''
+        ALTER TABLE mcp_servers ADD COLUMN oauthClientId TEXT
+      ''');
+    }
+    if (oldVersion < 11) {
+      // Add OAuth client secret column
+      await db.execute('''
+        ALTER TABLE mcp_servers ADD COLUMN oauthClientSecret TEXT
       ''');
     }
   }
