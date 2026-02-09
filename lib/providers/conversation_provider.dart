@@ -186,4 +186,10 @@ class ConversationProvider extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  /// Search conversations by title and message content
+  Future<List<Conversation>> searchConversations(String query) async {
+    if (query.trim().isEmpty) return List.unmodifiable(_conversations);
+    return await _db.searchConversations(query);
+  }
 }

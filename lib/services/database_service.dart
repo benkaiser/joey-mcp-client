@@ -437,4 +437,26 @@ class DatabaseService {
         row['mcpServerId'] as String: row['sessionId'] as String?,
     };
   }
+
+  /// Search conversations by title and message content.
+  /// Returns conversations that match the query, ordered by relevance (updatedAt DESC).
+  Future<List<Conversation>> searchConversations(String query) async {
+    final db = await database;
+    final likeQuery = '%$query%';
+
+    // Search conversations whose title matches OR that contain messages matching the query.
+    // Only search user and assistant messages (skip tool results, notifications, etc.)
+    final result = await db.rawQuery(
+      '''
+      SELECT DISTINCT c.* FROM conversations c
+      LEFT JOIN messages m ON c.id = m.conversationId
+      WHERE c.title LIKE ? COLLATE NOCASE
+         OR (m.content LIKE ? COLLATE NOCASE AND m.role IN ('user', 'assistant'))
+      ORDER BY c.updatedAt DESC
+    ''',
+      [likeQuery, likeQuery],
+    );
+    return result.map((map) => Conversation.fromMap(map)).toList();
+  }
+
 }

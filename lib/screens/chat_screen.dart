@@ -1466,7 +1466,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                     conversation.model,
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
-                                          color: Theme.of(context).colorScheme.primary,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
                                         ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -1971,7 +1973,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           onEdit: message.role == MessageRole.user
                               ? () => _editMessage(message, provider)
                               : null,
-                          onRegenerate: message.id == lastAssistantContentMessageId
+                          onRegenerate:
+                              message.id == lastAssistantContentMessageId
                               ? () => _regenerateLastResponse(provider)
                               : null,
                         );
