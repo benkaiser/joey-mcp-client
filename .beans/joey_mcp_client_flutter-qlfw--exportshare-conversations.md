@@ -1,18 +1,19 @@
 ---
 # joey_mcp_client_flutter-qlfw
 title: Export/share conversations
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-02-09T09:55:32Z
-updated_at: 2026-02-09T09:55:32Z
+updated_at: 2026-02-09T11:27:58Z
 ---
 
-Add the ability to export or share conversations. Currently users can only copy individual messages. They should be able to export full conversations in useful formats.
+Add the ability to share conversations as markdown. Tapping the share button in the chat app bar triggers the platform share sheet with the full conversation formatted as structured markdown.
 
 ## Checklist
-- [ ] Add export button to chat screen app bar or conversation list context menu
-- [ ] Support export as Markdown (.md) format
+- [x] Add share button to chat screen app bar
+- [x] Convert conversation to structured markdown (headings for User/Assistant/Tool/System messages)
+- [x] Use platform share sheet via share_plus package
+- [x] Handle tool call messages gracefully in exported format
 - [ ] Support export as JSON format (for re-import or archival)
-- [ ] Use platform share sheet for mobile (share_plus package)
 - [ ] Include conversation metadata (model, timestamps, MCP servers) in export
-- [ ] Handle tool call/result messages gracefully in exported format

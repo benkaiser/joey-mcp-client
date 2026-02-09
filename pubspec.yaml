@@ -63,6 +63,7 @@ dependencies:
   path_provider: ^2.1.5
   image_picker: ^1.2.1
   pasteboard: ^0.4.0
+  share_plus: ^12.0.1
 
 dev_dependencies:
   flutter_test:
