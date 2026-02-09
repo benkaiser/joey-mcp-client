@@ -11,6 +11,7 @@ import 'package:app_links/app_links.dart';
 import 'package:mcp_dart/mcp_dart.dart' show TextContent;
 import 'package:image_picker/image_picker.dart';
 import 'package:pasteboard/pasteboard.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
@@ -1535,6 +1536,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
               IconButton(
+                icon: const Icon(Icons.share),
+                tooltip: 'Share conversation',
+                onPressed: () => _shareConversation(),
+              ),
+              IconButton(
                 icon: const Icon(Icons.note_add),
                 tooltip: 'Start new conversation',
                 onPressed: () => _startNewConversation(),
@@ -2553,6 +2559,77 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       // Silently fail - title generation is not critical
     }
+  }
+
+  Future<void> _shareConversation() async {
+    final provider = context.read<ConversationProvider>();
+    final messages = provider.getMessages(widget.conversation.id);
+
+    if (messages.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No messages to share')),
+        );
+      }
+      return;
+    }
+
+    final conversation = provider.conversations.firstWhere(
+      (c) => c.id == widget.conversation.id,
+    );
+
+    final markdown = _conversationToMarkdown(conversation, messages);
+
+    // On desktop, copy to clipboard since the share sheet lacks a copy option.
+    // On mobile, use the native share sheet.
+    final isDesktop = !kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    if (isDesktop) {
+      await Clipboard.setData(ClipboardData(text: markdown));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Conversation copied to clipboard')),
+        );
+      }
+    } else {
+      await SharePlus.instance.share(ShareParams(text: markdown));
+    }
+  }
+
+  String _conversationToMarkdown(
+    Conversation conversation,
+    List<Message> messages,
+  ) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('# ${conversation.title}');
+    buffer.writeln();
+
+    for (final message in messages) {
+      switch (message.role) {
+        case MessageRole.user:
+          buffer.writeln('## User');
+          buffer.writeln();
+          buffer.writeln(message.content);
+          buffer.writeln();
+        case MessageRole.assistant:
+          // Skip assistant messages that are only tool calls with no content
+          if (message.content.isEmpty) break;
+          buffer.writeln('## Assistant');
+          buffer.writeln();
+          buffer.writeln(message.content);
+          buffer.writeln();
+        case MessageRole.tool:
+        case MessageRole.system:
+        case MessageRole.modelChange:
+        case MessageRole.elicitation:
+        case MessageRole.mcpNotification:
+          // Skip non-conversational messages
+          break;
+      }
+    }
+
+    return buffer.toString().trimRight();
   }
 
   Future<void> _startNewConversation() async {
