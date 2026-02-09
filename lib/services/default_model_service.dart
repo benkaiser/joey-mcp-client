@@ -5,6 +5,8 @@ class DefaultModelService {
   static const String _autoTitleKey = 'auto_title_enabled';
   static const String _systemPromptKey = 'system_prompt';
   static const String _showThinkingKey = 'show_thinking';
+  static const String _maxToolCallsKey = 'max_tool_calls';
+  static const int _defaultMaxToolCalls = 10;
   static const String _defaultSystemPrompt = 'You are a helpful assistant.\nUse markdown when rendering your responses.';
 
   static Future<String?> getDefaultModel() async {
@@ -55,5 +57,17 @@ class DefaultModelService {
   static Future<void> setShowThinking(bool show) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showThinkingKey, show);
+  }
+
+  /// Get max tool calls per message. 0 means unlimited.
+  static Future<int> getMaxToolCalls() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_maxToolCallsKey) ?? _defaultMaxToolCalls;
+  }
+
+  /// Set max tool calls per message. 0 means unlimited.
+  static Future<void> setMaxToolCalls(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_maxToolCallsKey, value);
   }
 }

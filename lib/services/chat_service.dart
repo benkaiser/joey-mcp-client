@@ -129,6 +129,76 @@ class ChatService {
     _eventController.close();
   }
 
+  /// Update the MCP server references and register handlers for new clients.
+  /// Call this when the set of active MCP servers changes mid-conversation.
+  void updateServers({
+    required Map<String, McpClientService> mcpClients,
+    required Map<String, List<McpTool>> mcpTools,
+    required Map<String, String> serverNames,
+  }) {
+    // Update server names
+    _serverNames.clear();
+    _serverNames.addAll(serverNames);
+
+    // Register handlers for any new clients
+    for (final entry in mcpClients.entries) {
+      final serverId = entry.key;
+      if (_mcpClients.containsKey(serverId)) continue; // Already registered
+
+      final client = entry.value;
+      client.setServerId(serverId);
+      client.onSamplingRequest = _handleSamplingRequest;
+      client.onElicitationRequest = _handleElicitationRequest;
+
+      client.onProgressNotification = (notification) {
+        _eventController.add(
+          McpProgressNotificationReceived(
+            serverId: notification.serverId,
+            progress: notification.progress,
+            total: notification.total,
+            message: notification.message,
+            progressToken: notification.progressToken,
+          ),
+        );
+      };
+
+      client.onGenericNotification = (method, params, serverId) {
+        final serverName = _serverNames[serverId] ?? serverId;
+        final event = McpGenericNotificationReceived(
+          serverId: serverId,
+          serverName: serverName,
+          method: method,
+          params: params,
+        );
+        if (_isStreaming) {
+          _pendingNotifications.add(event);
+        } else {
+          _eventController.add(event);
+        }
+      };
+
+      client.onToolsListChanged = () {
+        _eventController.add(McpToolsListChanged(serverId: serverId));
+      };
+
+      client.onResourcesListChanged = () {
+        _eventController.add(McpResourcesListChanged(serverId: serverId));
+      };
+    }
+
+    // Sync the maps. If the caller passes the same map instances we hold,
+    // we must avoid clearing them first (which would destroy the data).
+    // Only copy if they are different objects.
+    if (!identical(_mcpClients, mcpClients)) {
+      _mcpClients.clear();
+      _mcpClients.addAll(mcpClients);
+    }
+    if (!identical(_mcpTools, mcpTools)) {
+      _mcpTools.clear();
+      _mcpTools.addAll(mcpTools);
+    }
+  }
+
   /// Flush any pending notifications that were queued during streaming
   void _flushPendingNotifications() {
     _isStreaming = false;
@@ -531,6 +601,7 @@ class ChatService {
     bool modelSupportsImages = false,
     bool modelSupportsAudio = false,
   }) async {
+    final bool unlimited = maxIterations <= 0;
     int iterationCount = 0;
 
     // Get system prompt
@@ -545,7 +616,7 @@ class ChatService {
     _partialToolCalls = null;
     _wasCancelled = false;
 
-    while (iterationCount < maxIterations) {
+    while (unlimited || iterationCount < maxIterations) {
       iterationCount++;
 
       // Build API messages from current message list, prepending system prompt
@@ -807,7 +878,7 @@ class ChatService {
       }
     }
 
-    if (iterationCount >= maxIterations) {
+    if (!unlimited && iterationCount >= maxIterations) {
       print('ChatService: Warning - Maximum iterations reached');
       _flushPendingNotifications();
       _eventController.add(MaxIterationsReached());

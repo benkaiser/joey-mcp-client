@@ -1,10 +1,11 @@
 ---
 # joey_mcp_client_flutter-csnf
 title: MCP support audio content in responses
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-02-05T13:55:48Z
-updated_at: 2026-02-05T13:55:48Z
+updated_at: 2026-02-09T03:28:52Z
 ---
 
 Add support for rendering and playing audio content in MCP tool responses and messages.

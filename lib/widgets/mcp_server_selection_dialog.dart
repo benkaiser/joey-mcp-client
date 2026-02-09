@@ -3,7 +3,10 @@ import '../models/mcp_server.dart';
 import '../services/database_service.dart';
 
 class McpServerSelectionDialog extends StatefulWidget {
-  const McpServerSelectionDialog({super.key});
+  /// Optional list of server IDs that should be pre-selected.
+  final List<String>? initialSelectedServerIds;
+
+  const McpServerSelectionDialog({super.key, this.initialSelectedServerIds});
 
   @override
   State<McpServerSelectionDialog> createState() =>
@@ -18,6 +21,9 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialSelectedServerIds != null) {
+      _selectedServerIds.addAll(widget.initialSelectedServerIds!);
+    }
     _loadServers();
   }
 

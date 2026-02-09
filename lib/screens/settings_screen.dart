@@ -19,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   bool _autoTitleEnabled = true;
   String _systemPrompt = '';
+  int _maxToolCalls = 10;
 
   @override
   void initState() {
@@ -30,9 +31,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final autoTitleEnabled = await DefaultModelService.getAutoTitleEnabled();
     final systemPrompt = await DefaultModelService.getSystemPrompt();
+    final maxToolCalls = await DefaultModelService.getMaxToolCalls();
     if (mounted) {
       setState(() {
         _autoTitleEnabled = autoTitleEnabled;
+        _maxToolCalls = maxToolCalls;
         _systemPrompt = systemPrompt;
       });
     }
@@ -175,10 +178,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
           ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('Max Tool Calls'),
+              subtitle: Text(
+                _maxToolCalls == 0 ? 'Unlimited' : '$_maxToolCalls per message',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showMaxToolCallsDialog,
+            ),
+          ),
 
           const SizedBox(height: 16),
-
-          // System Prompt Section
           _buildSectionHeader('System Prompt'),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -324,6 +337,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showMaxToolCallsDialog() {
+    // Preset options: common values + unlimited
+    final options = [5, 10, 20, 50, 100, 0]; // 0 = unlimited
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Max Tool Calls'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Maximum number of tool calls the AI can make per message. '
+                  'Set to Unlimited for complex agentic tasks.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                ...options.map((value) {
+                  final label = value == 0 ? 'Unlimited' : '$value';
+                  final isSelected = _maxToolCalls == value;
+                  return RadioListTile<int>(
+                    title: Text(label),
+                    value: value,
+                    groupValue: _maxToolCalls,
+                    dense: true,
+                    selected: isSelected,
+                    onChanged: (int? newValue) async {
+                      if (newValue != null) {
+                        await DefaultModelService.setMaxToolCalls(newValue);
+                        setState(() {
+                          _maxToolCalls = newValue;
+                        });
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
+                      }
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
     );
   }
 

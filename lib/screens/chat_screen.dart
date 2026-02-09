@@ -23,6 +23,8 @@ import '../widgets/elicitation_form_card.dart';
 import '../widgets/thinking_indicator.dart';
 import '../widgets/mcp_oauth_card.dart';
 import '../widgets/tool_result_media.dart';
+import '../widgets/mcp_server_selection_dialog.dart';
+import 'mcp_debug_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -727,11 +729,15 @@ class _ChatScreenState extends State<ChatScreen> {
                     ?.contains('audio') ==
                 true;
 
+        // Get max tool calls setting
+        final maxToolCalls = await DefaultModelService.getMaxToolCalls();
+
         // Run the agentic loop in the chat service
         await _chatService!.runAgenticLoop(
           conversationId: widget.conversation.id,
           model: widget.conversation.model,
           messages: List.from(messages), // Pass a copy
+          maxIterations: maxToolCalls,
           modelSupportsImages: modelSupportsImages,
           modelSupportsAudio: modelSupportsAudio,
         );
@@ -1340,34 +1346,44 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
 
                     if (messages.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.message_outlined,
-                              size: 64,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Start a conversation',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Type a message below to begin',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
+                      return Column(
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.message_outlined,
+                                    size: 64,
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurfaceVariant,
+                                    ).colorScheme.primary.withValues(alpha: 0.5),
                                   ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Start a conversation',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Type a message below to begin',
+                                    style: Theme.of(context).textTheme.bodyMedium
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                            child: _buildCommandPalette(),
+                          ),
+                        ],
                       );
                     }
 
@@ -1407,6 +1423,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         _streamingReasoning.isNotEmpty;
                     final itemCount =
                         displayMessages.length +
+                        1 + // command palette
                         (hasStreaming ? 1 : 0) +
                         (_authenticationRequired ? 1 : 0);
 
@@ -1418,19 +1435,28 @@ class _ChatScreenState extends State<ChatScreen> {
                       itemBuilder: (context, index) {
                         // Since list is reversed, index 0 is the bottom (newest)
                         // We need to map reversed index to actual items:
-                        // - Index 0: auth card (if present) or streaming (if present) or last message
-                        // - Index 1: streaming (if auth present) or messages
+                        // - Index 0: command palette
+                        // - Index 1: auth card (if present) or streaming (if present) or last message
+                        // - Index 2: streaming (if auth present) or messages
                         // - Higher indices: older messages
 
-                        // Show auth required card at index 0 (bottom)
-                        if (_authenticationRequired && index == 0) {
+                        // Show command palette at index 0 (bottom)
+                        if (index == 0) {
+                          return _buildCommandPalette();
+                        }
+
+                        // Shift by 1 for command palette
+                        final paletteAdjustedIndex = index - 1;
+
+                        // Show auth required card
+                        if (_authenticationRequired && paletteAdjustedIndex == 0) {
                           return _buildAuthRequiredCard();
                         }
 
                         // Adjust index if auth card is present
                         final adjustedIndex = _authenticationRequired
-                            ? index - 1
-                            : index;
+                            ? paletteAdjustedIndex - 1
+                            : paletteAdjustedIndex;
 
                         // Show streaming content at adjusted index 0
                         if (hasStreaming && adjustedIndex == 0) {
@@ -1766,6 +1792,152 @@ class _ChatScreenState extends State<ChatScreen> {
       return _isToolExecuting ? '$toolText...' : toolText;
     }
     return 'Thinking...';
+  }
+
+  Widget _buildCommandPalette() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ActionChip(
+            avatar: Icon(
+              Icons.dns,
+              size: 18,
+              color: _mcpServers.isNotEmpty
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            label: Text(
+              _mcpServers.isNotEmpty
+                  ? 'MCP Servers (${_mcpServers.length})'
+                  : 'MCP Servers',
+            ),
+            onPressed: _showMcpServerSelector,
+            side: BorderSide(
+              color: _mcpServers.isNotEmpty
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          if (_mcpServers.isNotEmpty)
+            ActionChip(
+              avatar: Icon(
+                Icons.bug_report_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              label: const Text('Debug'),
+              onPressed: _openMcpDebugScreen,
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMcpServerSelector() async {
+    final currentServerIds = _mcpServers.map((s) => s.id).toList();
+
+    final selectedServerIds = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => McpServerSelectionDialog(
+        initialSelectedServerIds: currentServerIds,
+      ),
+    );
+
+    // User cancelled
+    if (selectedServerIds == null) return;
+
+    // Determine which servers were added and removed
+    final currentIds = currentServerIds.toSet();
+    final newIds = selectedServerIds.toSet();
+
+    if (currentIds.length == newIds.length &&
+        currentIds.containsAll(newIds)) {
+      return; // No change
+    }
+
+    final removedIds = currentIds.difference(newIds);
+    final addedIds = newIds.difference(currentIds);
+
+    // Close removed server clients
+    for (final id in removedIds) {
+      final client = _mcpClients.remove(id);
+      _mcpTools.remove(id);
+      _oauthProviders.remove(id);
+      _serverOAuthStatus.remove(id);
+      _serversNeedingOAuth.removeWhere((s) => s.id == id);
+      await client?.close();
+      // Clear stored session ID
+      await DatabaseService.instance.updateMcpSessionId(
+        widget.conversation.id,
+        id,
+        null,
+      );
+    }
+
+    // Save the new association to the database
+    await DatabaseService.instance.setConversationMcpServers(
+      widget.conversation.id,
+      selectedServerIds,
+    );
+
+    // Reload servers from DB and initialize new ones
+    final allServers = await DatabaseService.instance.getAllMcpServers();
+    final newMcpServers = allServers
+        .where((s) => newIds.contains(s.id))
+        .toList();
+
+    setState(() {
+      _mcpServers = newMcpServers;
+    });
+
+    // Initialize newly added servers
+    for (final id in addedIds) {
+      final server = newMcpServers.firstWhere((s) => s.id == id);
+      await _initializeMcpServer(server);
+    }
+
+    // Update ChatService with the new server names
+    if (_chatService != null) {
+      final serverNames = <String, String>{};
+      for (final server in _mcpServers) {
+        serverNames[server.id] = server.name;
+      }
+      _chatService!.updateServers(
+        mcpClients: _mcpClients,
+        mcpTools: _mcpTools,
+        serverNames: serverNames,
+      );
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'MCP servers updated (${_mcpServers.length} active)',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _openMcpDebugScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => McpDebugScreen(
+          servers: _mcpServers,
+          clients: _mcpClients,
+          tools: _mcpTools,
+        ),
+      ),
+    );
   }
 
   Widget _buildMessageInput() {
