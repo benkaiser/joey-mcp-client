@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -53,6 +53,7 @@ class DatabaseService {
         elicitationData TEXT,
         notificationData TEXT,
         imageData TEXT,
+        audioData TEXT,
         FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
       )
     ''');
@@ -222,6 +223,12 @@ class DatabaseService {
       // Add imageData column for MCP image content in tool results
       await db.execute('''
         ALTER TABLE messages ADD COLUMN imageData TEXT
+      ''');
+    }
+    if (oldVersion < 14) {
+      // Add audioData column for MCP audio content in tool results
+      await db.execute('''
+        ALTER TABLE messages ADD COLUMN audioData TEXT
       ''');
     }
   }

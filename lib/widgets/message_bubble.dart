@@ -5,7 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
-import 'tool_result_images.dart';
+import 'tool_result_media.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -246,6 +246,12 @@ class MessageBubble extends StatelessWidget {
                                 if (message.imageData != null)
                                   ToolResultImages(
                                     imageDataJson: message.imageData!,
+                                    messageId: message.id,
+                                  ),
+                                // Render audio players from audioData if present
+                                if (message.audioData != null)
+                                  ToolResultAudio(
+                                    audioDataJson: message.audioData!,
                                     messageId: message.id,
                                   ),
                                 if (isStreaming) ...[

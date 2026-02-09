@@ -59,6 +59,8 @@ dependencies:
   # MCP Client
   mcp_dart: ^1.2.2
   adaptive_dialog: ^2.6.0
+  just_audio: ^0.10.5
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

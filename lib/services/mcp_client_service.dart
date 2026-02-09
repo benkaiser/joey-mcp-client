@@ -98,6 +98,12 @@ class McpContent {
         data: content.data,
         mimeType: content.mimeType,
       );
+    } else if (content is AudioContent) {
+      return McpContent(
+        type: 'audio',
+        data: content.data,
+        mimeType: content.mimeType,
+      );
     } else if (content is EmbeddedResource) {
       return McpContent(type: 'resource', data: content.resource);
     }

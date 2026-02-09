@@ -215,6 +215,10 @@ class _ModelListItem extends StatelessWidget {
     final description = model['description'] as String? ?? '';
     final pricing = model['pricing'] as Map<String, dynamic>?;
     final contextLength = model['context_length'] as int? ?? 0;
+    final architecture = model['architecture'] as Map<String, dynamic>?;
+    final inputModalities =
+        (architecture?['input_modalities'] as List?)?.cast<String>() ??
+        ['text'];
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -316,6 +320,8 @@ class _ModelListItem extends StatelessWidget {
                       icon: Icons.attach_money,
                       label: _formatPricing(pricing['completion']),
                     ),
+                  for (final modality in inputModalities)
+                    _InfoChip(icon: _modalityIcon(modality), label: modality),
                 ],
               ),
             ],
@@ -323,6 +329,21 @@ class _ModelListItem extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  IconData _modalityIcon(String modality) {
+    switch (modality) {
+      case 'image':
+        return Icons.image;
+      case 'audio':
+        return Icons.audiotrack;
+      case 'video':
+        return Icons.videocam;
+      case 'file':
+        return Icons.attach_file;
+      default:
+        return Icons.text_fields;
+    }
   }
 
   String _formatNumber(int number) {

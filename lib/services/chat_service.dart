@@ -8,6 +8,30 @@ import 'openrouter_service.dart';
 import 'mcp_client_service.dart';
 import 'default_model_service.dart';
 
+/// Convert a MIME type like 'audio/mpeg' to its short format name like 'mp3'.
+String _audioFormatFromMimeType(String mimeType) {
+  const mimeToFormat = {
+    'audio/mpeg': 'mp3',
+    'audio/mp3': 'mp3',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav',
+    'audio/wave': 'wav',
+    'audio/aiff': 'aiff',
+    'audio/x-aiff': 'aiff',
+    'audio/aac': 'aac',
+    'audio/ogg': 'ogg',
+    'audio/flac': 'flac',
+    'audio/x-flac': 'flac',
+    'audio/mp4': 'm4a',
+    'audio/x-m4a': 'm4a',
+    'audio/m4a': 'm4a',
+    'audio/pcm': 'pcm16',
+    'audio/L16': 'pcm16',
+    'audio/webm': 'webm',
+  };
+  return mimeToFormat[mimeType] ?? mimeType.replaceFirst('audio/', '');
+}
+
 /// Service that handles the chat event loop, decoupled from UI
 class ChatService {
   final OpenRouterService _openRouterService;
@@ -505,6 +529,7 @@ class ChatService {
     required List<Message> messages,
     int maxIterations = 10,
     bool modelSupportsImages = false,
+    bool modelSupportsAudio = false,
   }) async {
     int iterationCount = 0;
 
@@ -560,6 +585,39 @@ class ChatService {
             }
           } catch (e) {
             print('ChatService: Failed to inject images: $e');
+          }
+        }
+
+        // If the model supports audio and this tool result has audio data,
+        // inject a user message with the audio so the LLM can process it
+        if (modelSupportsAudio &&
+            msg.role == MessageRole.tool &&
+            msg.audioData != null) {
+          try {
+            final audioList = jsonDecode(msg.audioData!) as List;
+            if (audioList.isNotEmpty) {
+              final contentParts = <Map<String, dynamic>>[
+                {
+                  'type': 'text',
+                  'text':
+                      '[Audio returned by tool "${msg.toolName ?? 'unknown'}"]',
+                },
+              ];
+              for (final audio in audioList) {
+                final data = audio['data'] as String;
+                final mimeType = audio['mimeType'] as String? ?? 'audio/wav';
+                contentParts.add({
+                  'type': 'input_audio',
+                  'input_audio': {
+                    'data': data,
+                    'format': _audioFormatFromMimeType(mimeType),
+                  },
+                });
+              }
+              apiMessages.add({'role': 'user', 'content': contentParts});
+            }
+          } catch (e) {
+            print('ChatService: Failed to inject audio: $e');
           }
         }
       }
@@ -673,6 +731,7 @@ class ChatService {
             toolCallId: result['toolId'] as String,
             toolName: result['toolName'] as String,
             imageData: result['imageData'] as String?,
+            audioData: result['audioData'] as String?,
           );
 
           _eventController.add(MessageCreated(message: toolMessage));
@@ -796,6 +855,7 @@ class ChatService {
       // Find which MCP server has this tool and execute it
       String? result;
       String? imageDataJson;
+      String? audioDataJson;
       for (final entry in _mcpTools.entries) {
         final serverId = entry.key;
         final tools = entry.value;
@@ -825,6 +885,20 @@ class ChatService {
               if (images.isNotEmpty) {
                 imageDataJson = jsonEncode(images);
               }
+
+              // Extract audio content
+              final audioItems = toolResult.content
+                  .where((c) => c.type == 'audio' && c.data != null)
+                  .map(
+                    (c) => {
+                      'data': c.data as String,
+                      'mimeType': c.mimeType ?? 'audio/wav',
+                    },
+                  )
+                  .toList();
+              if (audioItems.isNotEmpty) {
+                audioDataJson = jsonEncode(audioItems);
+              }
             }
           } catch (e) {
             result = 'Error executing tool: $e';
@@ -849,6 +923,7 @@ class ChatService {
         'toolName': toolName,
         'result': finalResult,
         if (imageDataJson != null) 'imageData': imageDataJson,
+        if (audioDataJson != null) 'audioData': audioDataJson,
       };
     }).toList();
 

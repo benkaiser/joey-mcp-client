@@ -4,6 +4,36 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import 'dart:math';
 
+/// Redact large base64 data (images/audio) from request data before logging
+String _redactedRequestBody(Map<String, dynamic> requestData) {
+  final redacted = jsonDecode(jsonEncode(requestData));
+  if (redacted['messages'] is List) {
+    for (final msg in redacted['messages']) {
+      final content = msg['content'];
+      if (content is List) {
+        for (final part in content) {
+          if (part is Map) {
+            // Redact image_url data URIs
+            if (part['type'] == 'image_url' && part['image_url'] is Map) {
+              final url = part['image_url']['url'] as String? ?? '';
+              if (url.startsWith('data:')) {
+                part['image_url']['url'] =
+                    '${url.substring(0, url.indexOf(',') + 1)}[REDACTED ${url.length} chars]';
+              }
+            }
+            // Redact input_audio data
+            if (part['type'] == 'input_audio' && part['input_audio'] is Map) {
+              final data = part['input_audio']['data'] as String? ?? '';
+              part['input_audio']['data'] = '[REDACTED ${data.length} chars]';
+            }
+          }
+        }
+      }
+    }
+  }
+  return jsonEncode(redacted);
+}
+
 /// Exception thrown when authentication fails (e.g., expired token)
 class OpenRouterAuthException implements Exception {
   final String message;
@@ -162,7 +192,9 @@ class OpenRouterService {
         requestData['max_tokens'] = maxTokens;
       }
 
-      print('OpenRouter: Full request body: ${jsonEncode(requestData)}');
+      print(
+        'OpenRouter: Full request body: ${_redactedRequestBody(requestData)}',
+      );
 
       final response = await _dio.post(
         'https://openrouter.ai/api/v1/chat/completions',
@@ -229,8 +261,9 @@ class OpenRouterService {
         requestData['tools'] = tools;
       }
 
-      print('OpenRouter: Full request body: ${jsonEncode(requestData)}');
-
+      print(
+        'OpenRouter: Full request body: ${_redactedRequestBody(requestData)}',
+      );
 
       final response = await _dio.post<ResponseBody>(
         'https://openrouter.ai/api/v1/chat/completions',

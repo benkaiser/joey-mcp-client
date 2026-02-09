@@ -22,7 +22,7 @@ import '../widgets/elicitation_url_card.dart';
 import '../widgets/elicitation_form_card.dart';
 import '../widgets/thinking_indicator.dart';
 import '../widgets/mcp_oauth_card.dart';
-import '../widgets/tool_result_images.dart';
+import '../widgets/tool_result_media.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -663,12 +663,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     ?.contains('image') ==
                 true;
 
+        // Check if the model supports audio input
+        final modelSupportsAudio =
+            _modelDetails != null &&
+            _modelDetails!['architecture'] != null &&
+            (_modelDetails!['architecture']['input_modalities'] as List?)
+                    ?.contains('audio') ==
+                true;
+
         // Run the agentic loop in the chat service
         await _chatService!.runAgenticLoop(
           conversationId: widget.conversation.id,
           model: widget.conversation.model,
           messages: List.from(messages), // Pass a copy
           modelSupportsImages: modelSupportsImages,
+          modelSupportsAudio: modelSupportsAudio,
         );
 
         // Auto-generate title after first response if enabled
@@ -1456,19 +1465,29 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (message.role == MessageRole.tool) {
                           // Show minimal indicator when thinking is disabled
                           if (!_showThinking) {
-                            // Still show images even when thinking is hidden
-                            if (message.imageData != null) {
+                            // Still show images/audio even when thinking is hidden
+                            if (message.imageData != null ||
+                                message.audioData != null) {
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   ThinkingIndicator(message: message),
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 16),
-                                    child: ToolResultImages(
-                                      imageDataJson: message.imageData!,
-                                      messageId: message.id,
+                                  if (message.imageData != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16),
+                                      child: ToolResultImages(
+                                        imageDataJson: message.imageData!,
+                                        messageId: message.id,
+                                      ),
                                     ),
-                                  ),
+                                  if (message.audioData != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16),
+                                      child: ToolResultAudio(
+                                        audioDataJson: message.audioData!,
+                                        messageId: message.id,
+                                      ),
+                                    ),
                                 ],
                               );
                             }
