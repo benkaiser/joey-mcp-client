@@ -32,6 +32,7 @@ import '../widgets/tool_result_media.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
 import 'mcp_debug_screen.dart';
 import 'mcp_prompts_screen.dart';
+import 'model_picker_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -653,10 +654,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadModelDetails() async {
     try {
+      final currentModel = _getCurrentModel();
       final openRouterService = context.read<OpenRouterService>();
       final models = await openRouterService.getModels();
       final model = models.firstWhere(
-        (m) => m['id'] == widget.conversation.model,
+        (m) => m['id'] == currentModel,
         orElse: () => {},
       );
       if (mounted) {
@@ -820,7 +822,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // Run the agentic loop in the chat service
         await _chatService!.runAgenticLoop(
           conversationId: widget.conversation.id,
-          model: widget.conversation.model,
+          model: _getCurrentModel(),
           messages: List.from(messages), // Pass a copy
           maxIterations: maxToolCalls,
           modelSupportsImages: modelSupportsImages,
@@ -1042,7 +1044,7 @@ class _ChatScreenState extends State<ChatScreen> {
             // Process the approved sampling request
             final response = await _chatService!.processSamplingRequest(
               request: approvedRequest,
-              preferredModel: widget.conversation.model,
+              preferredModel: _getCurrentModel(),
             );
 
             // Return the response to the MCP server
@@ -1328,7 +1330,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       await _chatService!.runAgenticLoop(
         conversationId: widget.conversation.id,
-        model: widget.conversation.model,
+        model: _getCurrentModel(),
         messages: List.from(remainingMessages),
         maxIterations: maxToolCalls,
         modelSupportsImages: modelSupportsImages,
@@ -1454,14 +1456,29 @@ class _ChatScreenState extends State<ChatScreen> {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(
-                            conversation.model,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.7),
+                          child: GestureDetector(
+                            onTap: _changeModel,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    conversation.model,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                            overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.swap_horiz,
+                                  size: 14,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         if (_modelDetails != null &&
@@ -1714,6 +1731,17 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
 
                         final message = displayMessages[actualMessageIndex];
+
+                        // Render model change indicator
+                        if (message.role == MessageRole.modelChange) {
+                          return MessageBubble(
+                            message: message,
+                            showThinking: _showThinking,
+                            onDelete: () =>
+                                _deleteMessage(message.id, provider),
+                            onEdit: null,
+                          );
+                        }
 
                         // Render elicitation messages as cards
                         if (message.role == MessageRole.elicitation) {
@@ -2476,7 +2504,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Warning: ${widget.conversation.model} may not support image input',
+            'Warning: ${_getCurrentModel()} may not support image input',
           ),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 3),
@@ -2507,7 +2535,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ];
 
       final response = await openRouterService.chatCompletion(
-        model: widget.conversation.model,
+        model: _getCurrentModel(),
         messages: apiMessages,
       );
 
@@ -2529,7 +2557,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Create a new conversation with the same model as the current one
     final newConversation = await provider.createConversation(
-      model: widget.conversation.model,
+      model: _getCurrentModel(),
     );
 
     // Copy MCP servers from current conversation to new conversation
@@ -2571,6 +2599,55 @@ class _ChatScreenState extends State<ChatScreen> {
         },
       ),
     );
+  }
+
+  /// Get the current model from the provider (live data)
+  String _getCurrentModel() {
+    final provider = context.read<ConversationProvider>();
+    final conversation = provider.conversations.firstWhere(
+      (c) => c.id == widget.conversation.id,
+      orElse: () => widget.conversation,
+    );
+    return conversation.model;
+  }
+
+  /// Open the model picker and switch the conversation's model
+  Future<void> _changeModel() async {
+    final currentModel = _getCurrentModel();
+    final selectedModel = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ModelPickerScreen(
+          defaultModel: currentModel,
+          showDefaultToggle: false,
+        ),
+      ),
+    );
+
+    if (selectedModel == null || selectedModel == currentModel || !mounted) {
+      return;
+    }
+
+    final provider = context.read<ConversationProvider>();
+
+    // Update the conversation model in the database
+    await provider.updateConversationModel(
+      widget.conversation.id,
+      selectedModel,
+    );
+
+    // Add a visual indicator for the model change
+    final modelChangeMessage = Message(
+      id: const Uuid().v4(),
+      conversationId: widget.conversation.id,
+      role: MessageRole.modelChange,
+      content: 'Model changed from $currentModel to $selectedModel',
+      timestamp: DateTime.now(),
+    );
+    await provider.addMessage(modelChangeMessage);
+
+    // Refresh model details for the new model
+    _loadModelDetails();
   }
 
   String _getPricingText() {

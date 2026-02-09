@@ -76,6 +76,19 @@ class ConversationProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateConversationModel(String id, String newModel) async {
+    final index = _conversations.indexWhere((c) => c.id == id);
+    if (index != -1) {
+      _conversations[index] = _conversations[index].copyWith(
+        model: newModel,
+        updatedAt: DateTime.now(),
+      );
+
+      await _db.updateConversation(_conversations[index]);
+      notifyListeners();
+    }
+  }
+
   Future<void> addMessage(Message message) async {
     if (!_messages.containsKey(message.conversationId)) {
       _messages[message.conversationId] = [];

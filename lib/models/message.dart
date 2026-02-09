@@ -7,6 +7,7 @@ enum MessageRole {
   tool, // For tool result messages
   elicitation, // For elicitation request cards (local display only, not sent to LLM)
   mcpNotification, // For MCP server notifications (included as context for LLM)
+  modelChange, // For model change indicators (local display only, not sent to LLM)
 }
 
 class Message {
@@ -118,6 +119,10 @@ class Message {
   Map<String, dynamic>? toApiMessage() {
     // Elicitation messages are local-only, don't send to LLM
     if (role == MessageRole.elicitation) {
+      return null;
+    }
+    // Model change indicators are local-only, don't send to LLM
+    if (role == MessageRole.modelChange) {
       return null;
     }
     // MCP notifications are sent as system messages for context

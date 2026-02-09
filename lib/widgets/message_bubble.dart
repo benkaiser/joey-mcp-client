@@ -27,6 +27,11 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Handle model change indicators
+    if (message.role == MessageRole.modelChange) {
+      return _buildSystemMessage(context);
+    }
+
     // Handle MCP notification messages
     if (message.role == MessageRole.mcpNotification) {
       return _buildNotificationMessage(context);
@@ -381,6 +386,49 @@ class MessageBubble extends StatelessWidget {
       const SnackBar(
         content: Text('Message copied to clipboard'),
         duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Build a system message indicator (e.g. model change)
+  Widget _buildSystemMessage(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.swap_horiz,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  message.content,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
