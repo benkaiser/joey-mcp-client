@@ -121,53 +121,88 @@ class ConversationListScreen extends StatelessWidget {
           String? selectedModel;
 
           if (defaultModel != null) {
-            // Use default model directly, bypass model picker
-            selectedModel = defaultModel;
+            // Default model exists — show combined dialog with model override option
+            if (!context.mounted) return;
+
+            final result = await showDialog<dynamic>(
+              context: context,
+              builder: (context) =>
+                  McpServerSelectionDialog(selectedModel: defaultModel),
+            );
+
+            // User cancelled
+            if (result == null || !context.mounted) return;
+
+            List<String> selectedServerIds;
+            if (result is McpServerSelectionResult) {
+              selectedModel = result.model;
+              selectedServerIds = result.serverIds;
+            } else if (result is List<String>) {
+              selectedModel = defaultModel;
+              selectedServerIds = result;
+            } else {
+              return;
+            }
+
+            final provider = context.read<ConversationProvider>();
+            final conversation = await provider.createConversation(
+              model: selectedModel,
+            );
+
+            if (selectedServerIds.isNotEmpty) {
+              await DatabaseService.instance.setConversationMcpServers(
+                conversation.id,
+                selectedServerIds,
+              );
+            }
+
+            if (context.mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(conversation: conversation),
+                ),
+              );
+            }
           } else {
-            // Show model picker if no default is set
+            // No default model — show model picker first
             selectedModel = await Navigator.push<String>(
               context,
               MaterialPageRoute(
                 builder: (context) => const ModelPickerScreen(),
               ),
             );
-          }
 
-          if (selectedModel != null && context.mounted) {
-            // Show MCP server selection dialog
+            if (selectedModel == null || !context.mounted) return;
+
+            // Show MCP server selection dialog (without model section)
             final selectedServerIds = await showDialog<List<String>>(
               context: context,
               builder: (context) => const McpServerSelectionDialog(),
             );
 
             // User cancelled
-            if (selectedServerIds == null && context.mounted) {
-              return;
+            if (selectedServerIds == null || !context.mounted) return;
+
+            final provider = context.read<ConversationProvider>();
+            final conversation = await provider.createConversation(
+              model: selectedModel,
+            );
+
+            if (selectedServerIds.isNotEmpty) {
+              await DatabaseService.instance.setConversationMcpServers(
+                conversation.id,
+                selectedServerIds,
+              );
             }
 
             if (context.mounted) {
-              final provider = context.read<ConversationProvider>();
-              final conversation = await provider.createConversation(
-                model: selectedModel,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(conversation: conversation),
+                ),
               );
-
-              // Save MCP server associations
-              if (selectedServerIds != null && selectedServerIds.isNotEmpty) {
-                await DatabaseService.instance.setConversationMcpServers(
-                  conversation.id,
-                  selectedServerIds,
-                );
-              }
-
-              if (context.mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        ChatScreen(conversation: conversation),
-                  ),
-                );
-              }
             }
           }
         },
