@@ -4,8 +4,9 @@ import '../services/default_model_service.dart';
 
 class ModelPickerScreen extends StatefulWidget {
   final String? defaultModel;
+  final bool showDefaultToggle;
 
-  const ModelPickerScreen({super.key, this.defaultModel});
+  const ModelPickerScreen({super.key, this.defaultModel, this.showDefaultToggle = true});
 
   @override
   State<ModelPickerScreen> createState() => _ModelPickerScreenState();
@@ -69,9 +70,9 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Model'),
+        title: Text(widget.showDefaultToggle ? 'Select Model' : 'Change Default Model'),
         actions: [
-          if (_selectedDefaultModel != null)
+          if (widget.showDefaultToggle && _selectedDefaultModel != null)
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: Chip(
@@ -172,6 +173,7 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
         final model = filteredModels[index];
         return _ModelListItem(
           model: model,
+          showDefaultToggle: widget.showDefaultToggle,
           isDefault: _selectedDefaultModel == model['id'],
           onTap: () {
             Navigator.pop(context, model['id'] as String);
@@ -198,12 +200,14 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
 class _ModelListItem extends StatelessWidget {
   final Map<String, dynamic> model;
   final VoidCallback onTap;
+  final bool showDefaultToggle;
   final bool isDefault;
   final Function(bool) onDefaultToggle;
 
   const _ModelListItem({
     required this.model,
     required this.onTap,
+    this.showDefaultToggle = true,
     required this.isDefault,
     required this.onDefaultToggle,
   });
@@ -274,22 +278,23 @@ class _ModelListItem extends StatelessWidget {
                     ),
                   ),
                   // Default checkbox
-                  Column(
-                    children: [
-                      Checkbox(
-                        value: isDefault,
-                        onChanged: (bool? value) {
-                          if (value != null) {
-                            onDefaultToggle(value);
-                          }
-                        },
-                      ),
-                      Text(
-                        'Default',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+                  if (showDefaultToggle)
+                    Column(
+                      children: [
+                        Checkbox(
+                          value: isDefault,
+                          onChanged: (bool? value) {
+                            if (value != null) {
+                              onDefaultToggle(value);
+                            }
+                          },
+                        ),
+                        Text(
+                          'Default',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                 ],
               ),
 

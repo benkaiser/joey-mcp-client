@@ -85,7 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _changeDefaultModel() async {
     final selectedModel = await Navigator.push<String>(
       context,
-      MaterialPageRoute(builder: (context) => const ModelPickerScreen()),
+      MaterialPageRoute(builder: (context) => const ModelPickerScreen(showDefaultToggle: false)),
     );
 
     if (selectedModel != null) {
