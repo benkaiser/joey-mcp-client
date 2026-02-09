@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -82,6 +83,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadMcpServers();
     _loadShowThinking();
     _initMcpOAuthDeepLinkListener();
+    _focusNode.onKeyEvent = _handleKeyEvent;
+  }
+
+  /// Handle key events for the message input.
+  /// Enter sends the message; Shift+Enter inserts a newline.
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.enter &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      if (!_isLoading) {
+        _sendMessage();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   /// Initialize deep link listener for MCP OAuth callbacks
@@ -2026,13 +2042,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 maxLines: null,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (val) {
-                  if (!_isLoading) {
-                    _sendMessage();
-                  }
-                  _focusNode.requestFocus();
-                },
+                textInputAction: TextInputAction.newline,
               ),
             ),
             const SizedBox(width: 8),
