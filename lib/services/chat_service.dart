@@ -900,6 +900,11 @@ class ChatService {
                 audioDataJson = jsonEncode(audioItems);
               }
             }
+          } on McpAuthRequiredException catch (e) {
+            result = 'Error: Authentication required for MCP server';
+            _eventController.add(
+              McpAuthRequiredForServer(serverId: serverId, serverUrl: e.serverUrl),
+            );
           } catch (e) {
             result = 'Error executing tool: $e';
           }
@@ -1064,4 +1069,12 @@ class McpGenericNotificationReceived extends ChatEvent {
     required this.method,
     this.params,
   });
+}
+
+/// Event emitted when an MCP server requires OAuth authentication during a tool call
+class McpAuthRequiredForServer extends ChatEvent {
+  final String serverId;
+  final String serverUrl;
+
+  McpAuthRequiredForServer({required this.serverId, required this.serverUrl});
 }

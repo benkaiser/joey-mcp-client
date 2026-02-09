@@ -174,7 +174,56 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       await client.initialize(sessionId: storedSessionId);
-      final tools = await client.listTools();
+
+      List<McpTool> tools;
+      try {
+        tools = await client.listTools();
+      } catch (e) {
+        // If listing tools fails with an invalid session error, retry with a fresh session
+        if (e.toString().toLowerCase().contains('no valid session') ||
+            (e.toString().contains('400') && e.toString().toLowerCase().contains('session'))) {
+          debugPrint('MCP: Session invalid after initialize for ${server.name}, retrying fresh...');
+          await client.close();
+          final freshClient = McpClientService(
+            serverUrl: server.url,
+            headers: server.headers,
+            oauthProvider: oauthProvider,
+          );
+          freshClient.onAuthRequired = client.onAuthRequired;
+          freshClient.onSessionReestablished = client.onSessionReestablished;
+          await freshClient.initialize(); // No session ID
+          tools = await freshClient.listTools();
+          // Replace client reference for the rest of setup
+          _mcpClients[server.id] = freshClient;
+          _mcpTools[server.id] = tools;
+          // Update stored session ID
+          await DatabaseService.instance.updateMcpSessionId(
+            widget.conversation.id,
+            server.id,
+            freshClient.sessionId,
+          );
+          debugPrint('MCP: Fresh session established for ${server.name}: ${freshClient.sessionId}');
+
+          // Update server OAuth status if it was previously pending
+          if (server.oauthStatus == McpOAuthStatus.required ||
+              server.oauthStatus == McpOAuthStatus.pending) {
+            final updatedServer = server.copyWith(
+              oauthStatus: McpOAuthStatus.authenticated,
+              updatedAt: DateTime.now(),
+            );
+            await DatabaseService.instance.updateMcpServer(updatedServer);
+            final index = _mcpServers.indexWhere((s) => s.id == server.id);
+            if (index >= 0) {
+              setState(() {
+                _mcpServers[index] = updatedServer;
+                _serverOAuthStatus.remove(server.id);
+              });
+            }
+          }
+          return; // Skip the rest of setup since we've handled it
+        }
+        rethrow;
+      }
 
       _mcpClients[server.id] = client;
       _mcpTools[server.id] = tools;
@@ -452,6 +501,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _mcpClients.remove(server.id);
       _mcpTools.remove(server.id);
     }
+
+    // Clear stored session ID so we don't try to resume a stale session
+    await DatabaseService.instance.updateMcpSessionId(
+      widget.conversation.id,
+      server.id,
+      null,
+    );
 
     await _initializeMcpServer(updatedServer);
 
@@ -857,6 +913,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Add message to provider
       provider.addMessage(notificationMessage);
+    } else if (event is McpAuthRequiredForServer) {
+      // Find the server that needs OAuth and show the dialog
+      final server = _mcpServers.firstWhere(
+        (s) => s.id == event.serverId || s.url == event.serverUrl,
+        orElse: () => _mcpServers.first,
+      );
+      _handleServerNeedsOAuth(server);
     }
   }
 

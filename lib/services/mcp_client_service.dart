@@ -573,8 +573,19 @@ class McpClientService {
     try {
       final result = await _client!.listTools();
       return result.tools.map((t) => McpTool.fromMcpDartTool(t)).toList();
+    } on UnauthorizedError catch (e) {
+      print('MCP: List tools unauthorized: $e');
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
     } catch (e) {
       print('MCP: Failed to list tools: $e');
+      // Check for auth-related errors
+      if (e.toString().contains('401') ||
+          e.toString().toLowerCase().contains('unauthorized') ||
+          e.toString().toLowerCase().contains('authentication failed')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
+      }
       throw Exception('Failed to list tools: $e');
     }
   }
@@ -621,6 +632,8 @@ class McpClientService {
 
     try {
       return await _callToolInternal(toolName, arguments);
+    } on McpAuthRequiredException {
+      rethrow;
     } catch (e) {
       // If the error is due to an invalid session, re-initialize and retry once
       if (_isInvalidSessionError(e)) {
@@ -629,6 +642,7 @@ class McpClientService {
           await _reinitialize();
           return await _callToolInternal(toolName, arguments);
         } catch (retryError) {
+          if (retryError is McpAuthRequiredException) rethrow;
           print('MCP: Retry after re-initialization also failed: $retryError');
           return McpToolResult(
             content: [
@@ -640,6 +654,13 @@ class McpClientService {
             isError: true,
           );
         }
+      }
+      // Check if this is an auth-related error
+      if (e.toString().contains('401') ||
+          e.toString().toLowerCase().contains('unauthorized') ||
+          e.toString().toLowerCase().contains('authentication failed')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
       }
       rethrow;
     }
@@ -712,6 +733,10 @@ class McpClientService {
         content: [McpContent(type: 'text', text: 'Error: Request timed out')],
         isError: true,
       );
+    } on UnauthorizedError catch (e) {
+      print('MCP: Tool $toolName unauthorized: $e');
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
     } catch (e) {
       print('MCP: Failed to call tool $toolName: $e');
 
