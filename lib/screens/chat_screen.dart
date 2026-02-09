@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +9,8 @@ import 'package:uuid/uuid.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:mcp_dart/mcp_dart.dart' show TextContent;
+import 'package:image_picker/image_picker.dart';
+import 'package:pasteboard/pasteboard.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
@@ -62,6 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
   // Track MCP progress notifications
   McpProgressNotificationReceived? _currentProgress;
 
+  // Image attachments pending send
+  final List<_PendingImage> _pendingImages = [];
+  final ImagePicker _imagePicker = ImagePicker();
+
   // MCP OAuth support
   final McpOAuthService _mcpOAuthService = McpOAuthService();
   final AppLinks _appLinks = AppLinks();
@@ -88,6 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Handle key events for the message input.
   /// Enter sends the message; Shift+Enter inserts a newline.
+  /// Cmd/Ctrl+V pastes images from clipboard on desktop.
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.enter &&
@@ -97,7 +106,38 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return KeyEventResult.handled;
     }
+    // Intercept Cmd/Ctrl+V on desktop to paste images
+    if (_isDesktop &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyV &&
+        (HardwareKeyboard.instance.isMetaPressed ||
+            HardwareKeyboard.instance.isControlPressed)) {
+      _handleDesktopPaste();
+      // Don't consume the event — let the text field also handle normal text paste
+      return KeyEventResult.ignored;
+    }
     return KeyEventResult.ignored;
+  }
+
+  /// Whether we're running on a desktop platform
+  bool get _isDesktop =>
+      !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
+
+  /// Handle paste on desktop: check clipboard for image data
+  Future<void> _handleDesktopPaste() async {
+    try {
+      final imageBytes = await Pasteboard.image;
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        setState(() {
+          _pendingImages.add(
+            _PendingImage(bytes: imageBytes, mimeType: 'image/png'),
+          );
+        });
+        _showModelImageWarningIfNeeded();
+      }
+    } catch (e) {
+      // Silently fail — clipboard may just contain text
+    }
   }
 
   /// Initialize deep link listener for MCP OAuth callbacks
@@ -688,10 +728,24 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     try {
       final text = _messageController.text.trim();
-      if (text.isEmpty) return;
+      if (text.isEmpty && _pendingImages.isEmpty) return;
 
       final provider = context.read<ConversationProvider>();
       final openRouterService = context.read<OpenRouterService>();
+
+      // Encode pending images as base64 JSON
+      String? imageDataJson;
+      if (_pendingImages.isNotEmpty) {
+        final imageList = _pendingImages
+            .map(
+              (img) => {
+                'data': base64Encode(img.bytes),
+                'mimeType': img.mimeType,
+              },
+            )
+            .toList();
+        imageDataJson = jsonEncode(imageList);
+      }
 
       // Add user message
       final userMessage = Message(
@@ -700,10 +754,14 @@ class _ChatScreenState extends State<ChatScreen> {
         role: MessageRole.user,
         content: text,
         timestamp: DateTime.now(),
+        imageData: imageDataJson,
       );
 
       await provider.addMessage(userMessage);
       _messageController.text = '';
+      setState(() {
+        _pendingImages.clear();
+      });
       _scrollToBottom();
 
       // Get AI response
@@ -2025,43 +2083,274 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       padding: const EdgeInsets.all(8.0),
       child: SafeArea(
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                focusNode: _focusNode,
-                decoration: InputDecoration(
-                  hintText: 'Type a message...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
+            // Pending image thumbnails
+            if (_pendingImages.isNotEmpty)
+              SizedBox(
+                height: 80,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _pendingImages.length,
+                  itemBuilder: (context, index) {
+                    final img = _pendingImages[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0, bottom: 4.0),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              img.bytes,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _pendingImages.removeAt(index);
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  shape: BoxShape.circle,
+                                ),
+                                padding: const EdgeInsets.all(2),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            Row(
+              children: [
+                // Attachment button — popup on mobile, simple button on desktop
+                if (!kIsWeb && (Platform.isIOS || Platform.isAndroid))
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: 'Attach image',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'gallery':
+                          _pickImageFromGallery();
+                          break;
+                        case 'camera':
+                          _pickImageFromCamera();
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'gallery',
+                        child: ListTile(
+                          leading: Icon(Icons.photo_library_outlined),
+                          title: Text('Photo Library'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'camera',
+                        child: ListTile(
+                          leading: Icon(Icons.camera_alt_outlined),
+                          title: Text('Camera'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  IconButton(
+                    icon: Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: 'Attach image',
+                    onPressed: _pickImageFromGallery,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    focusNode: _focusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    maxLines: null,
+                    textInputAction: TextInputAction.newline,
+                    contentInsertionConfiguration:
+                        ContentInsertionConfiguration(
+                          onContentInserted: _onContentInserted,
+                          allowedMimeTypes: const [
+                            'image/png',
+                            'image/jpeg',
+                            'image/gif',
+                            'image/webp',
+                            'image/bmp',
+                          ],
+                        ),
                   ),
                 ),
-                maxLines: null,
-                textInputAction: TextInputAction.newline,
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _isLoading ? _stopMessage : _sendMessage,
-              icon: Icon(_isLoading ? Icons.stop : Icons.send),
-              style: IconButton.styleFrom(
-                backgroundColor: _isLoading
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.primary,
-                foregroundColor: _isLoading
-                    ? Theme.of(context).colorScheme.onError
-                    : Theme.of(context).colorScheme.onPrimary,
-              ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _isLoading ? _stopMessage : _sendMessage,
+                  icon: Icon(_isLoading ? Icons.stop : Icons.send),
+                  style: IconButton.styleFrom(
+                    backgroundColor: _isLoading
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.primary,
+                    foregroundColor: _isLoading
+                        ? Theme.of(context).colorScheme.onError
+                        : Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Pick images from the device gallery (supports multi-select)
+  Future<void> _pickImageFromGallery() async {
+    try {
+      final List<XFile> images = await _imagePicker.pickMultiImage(
+        imageQuality: 85,
+        maxWidth: 2048,
+        maxHeight: 2048,
+      );
+      for (final image in images) {
+        await _addImageFile(image);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Take a photo from the device camera
+  Future<void> _pickImageFromCamera() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 2048,
+        maxHeight: 2048,
+      );
+      if (image != null) {
+        await _addImageFile(image);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to capture image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle content inserted via the soft keyboard (Android image paste/insert)
+  void _onContentInserted(KeyboardInsertedContent content) async {
+    if (content.hasData) {
+      final bytes = content.data;
+      if (bytes != null && bytes.isNotEmpty) {
+        final mimeType = content.mimeType;
+        setState(() {
+          _pendingImages.add(_PendingImage(bytes: bytes, mimeType: mimeType));
+        });
+        _showModelImageWarningIfNeeded();
+      }
+    } else {
+      // Some keyboards provide a URI instead of raw data
+      try {
+        final file = XFile(content.uri);
+        await _addImageFile(file);
+      } catch (e) {
+        debugPrint('Failed to load inserted content from URI: $e');
+      }
+    }
+  }
+
+  /// Add an XFile image to the pending list
+  Future<void> _addImageFile(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final mimeType = _mimeTypeFromPath(file.path);
+    setState(() {
+      _pendingImages.add(
+        _PendingImage(bytes: Uint8List.fromList(bytes), mimeType: mimeType),
+      );
+    });
+    _showModelImageWarningIfNeeded();
+  }
+
+  /// Determine MIME type from file extension
+  String _mimeTypeFromPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    return 'image/png'; // Default
+  }
+
+  /// Show a warning if the current model doesn't support image input
+  void _showModelImageWarningIfNeeded() {
+    final supportsImages =
+        _modelDetails != null &&
+        _modelDetails!['architecture'] != null &&
+        (_modelDetails!['architecture']['input_modalities'] as List?)?.contains(
+              'image',
+            ) ==
+            true;
+
+    if (!supportsImages && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Warning: ${widget.conversation.model} may not support image input',
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _generateConversationTitle(
@@ -2227,4 +2516,12 @@ class _RenameDialogState extends State<_RenameDialog> {
       ],
     );
   }
+}
+
+/// Holds a pending image attachment before it is sent
+class _PendingImage {
+  final Uint8List bytes;
+  final String mimeType;
+
+  _PendingImage({required this.bytes, required this.mimeType});
 }

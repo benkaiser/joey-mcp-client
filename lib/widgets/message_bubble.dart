@@ -64,11 +64,26 @@ class MessageBubble extends StatelessWidget {
                       ).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: SelectableText(
-                      message.content,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // Show attached images as thumbnails
+                        if (message.imageData != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: ToolResultImages(
+                              imageDataJson: message.imageData!,
+                              messageId: message.id,
+                            ),
+                          ),
+                        if (message.content.isNotEmpty)
+                          SelectableText(
+                            message.content,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                      ],
                     ),
                   )
                 else
@@ -317,8 +332,6 @@ class MessageBubble extends StatelessWidget {
       ),
     );
   }
-
-
 
   Widget _buildActionButton({
     required BuildContext context,

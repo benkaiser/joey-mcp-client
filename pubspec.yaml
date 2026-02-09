@@ -61,6 +61,8 @@ dependencies:
   adaptive_dialog: ^2.6.0
   just_audio: ^0.10.5
   path_provider: ^2.1.5
+  image_picker: ^1.2.1
+  pasteboard: ^0.4.0
 
 dev_dependencies:
   flutter_test:

@@ -152,10 +152,32 @@ class Message {
       return {'role': 'assistant', 'tool_calls': jsonDecode(toolCallData!)};
     } else {
       // Regular user/assistant message
-      return {
-        'role': role == MessageRole.user ? 'user' : 'assistant',
-        'content': content,
-      };
+      final apiRole = role == MessageRole.user ? 'user' : 'assistant';
+
+      // If user message has image attachments, build multi-part content
+      if (role == MessageRole.user && imageData != null) {
+        try {
+          final images = jsonDecode(imageData!) as List;
+          if (images.isNotEmpty) {
+            final contentParts = <Map<String, dynamic>>[
+              {'type': 'text', 'text': content},
+            ];
+            for (final img in images) {
+              final data = img['data'] as String;
+              final mimeType = img['mimeType'] as String? ?? 'image/png';
+              contentParts.add({
+                'type': 'image_url',
+                'image_url': {'url': 'data:$mimeType;base64,$data'},
+              });
+            }
+            return {'role': apiRole, 'content': contentParts};
+          }
+        } catch (e) {
+          // Fall through to plain text
+        }
+      }
+
+      return {'role': apiRole, 'content': content};
     }
   }
 }
