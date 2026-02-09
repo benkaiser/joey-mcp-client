@@ -8,10 +8,14 @@ class McpAuthRequiredException implements Exception {
   final String serverUrl;
   final String message;
 
-  McpAuthRequiredException(this.serverUrl, [this.message = 'OAuth authentication required']);
+  McpAuthRequiredException(
+    this.serverUrl, [
+    this.message = 'OAuth authentication required',
+  ]);
 
   @override
-  String toString() => 'McpAuthRequiredException: $message (server: $serverUrl)';
+  String toString() =>
+      'McpAuthRequiredException: $message (server: $serverUrl)';
 }
 
 /// Represents a progress notification from an MCP server
@@ -212,11 +216,7 @@ class McpClientService {
   /// Server ID for identifying this connection in notifications
   String? _serverId;
 
-  McpClientService({
-    required this.serverUrl,
-    this.headers,
-    this.oauthProvider,
-  });
+  McpClientService({required this.serverUrl, this.headers, this.oauthProvider});
 
   /// Set the server ID for identifying this connection in notifications
   void setServerId(String serverId) {
@@ -298,14 +298,20 @@ class McpClientService {
       print('MCP: Authorization required for $serverUrl: $e');
       // Signal that OAuth is needed
       onAuthRequired?.call(serverUrl);
-      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
     } catch (e) {
       print('MCP: Failed to initialize: $e');
       // Check if this is an auth-related error
       if (e.toString().contains('401') ||
           e.toString().toLowerCase().contains('unauthorized')) {
         onAuthRequired?.call(serverUrl);
-        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
       }
       throw Exception('Failed to initialize MCP server: $e');
     }
@@ -576,7 +582,10 @@ class McpClientService {
     } on UnauthorizedError catch (e) {
       print('MCP: List tools unauthorized: $e');
       onAuthRequired?.call(serverUrl);
-      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
     } catch (e) {
       print('MCP: Failed to list tools: $e');
       // Check for auth-related errors
@@ -584,9 +593,77 @@ class McpClientService {
           e.toString().toLowerCase().contains('unauthorized') ||
           e.toString().toLowerCase().contains('authentication failed')) {
         onAuthRequired?.call(serverUrl);
-        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
       }
       throw Exception('Failed to list tools: $e');
+    }
+  }
+
+  /// List available prompts from the MCP server
+  Future<List<Prompt>> listPrompts() async {
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
+
+    try {
+      final result = await _client!.listPrompts();
+      return result.prompts;
+    } on UnauthorizedError catch (e) {
+      print('MCP: List prompts unauthorized: $e');
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
+    } catch (e) {
+      print('MCP: Failed to list prompts: $e');
+      if (e.toString().contains('401') ||
+          e.toString().toLowerCase().contains('unauthorized')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
+      }
+      throw Exception('Failed to list prompts: $e');
+    }
+  }
+
+  /// Get a specific prompt from the MCP server, optionally with arguments
+  Future<GetPromptResult> getPrompt(
+    String name, {
+    Map<String, String>? arguments,
+  }) async {
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
+
+    try {
+      final result = await _client!.getPrompt(
+        GetPromptRequest(name: name, arguments: arguments),
+      );
+      return result;
+    } on UnauthorizedError catch (e) {
+      print('MCP: Get prompt unauthorized: $e');
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
+    } catch (e) {
+      print('MCP: Failed to get prompt $name: $e');
+      if (e.toString().contains('401') ||
+          e.toString().toLowerCase().contains('unauthorized')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
+      }
+      throw Exception('Failed to get prompt $name: $e');
     }
   }
 
@@ -660,7 +737,10 @@ class McpClientService {
           e.toString().toLowerCase().contains('unauthorized') ||
           e.toString().toLowerCase().contains('authentication failed')) {
         onAuthRequired?.call(serverUrl);
-        throw McpAuthRequiredException(serverUrl, 'OAuth authentication required');
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
       }
       rethrow;
     }
@@ -736,7 +816,10 @@ class McpClientService {
     } on UnauthorizedError catch (e) {
       print('MCP: Tool $toolName unauthorized: $e');
       onAuthRequired?.call(serverUrl);
-      throw McpAuthRequiredException(serverUrl, e.message ?? 'OAuth authentication required');
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
     } catch (e) {
       print('MCP: Failed to call tool $toolName: $e');
 

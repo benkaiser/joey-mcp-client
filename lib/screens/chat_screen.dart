@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
+import 'package:mcp_dart/mcp_dart.dart' show TextContent;
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
@@ -25,6 +26,7 @@ import '../widgets/mcp_oauth_card.dart';
 import '../widgets/tool_result_media.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
 import 'mcp_debug_screen.dart';
+import 'mcp_prompts_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -136,7 +138,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // Create OAuth provider if server has OAuth tokens
       McpOAuthClientProvider? oauthProvider;
 
-      if (server.oauthStatus != McpOAuthStatus.none || server.oauthTokens != null) {
+      if (server.oauthStatus != McpOAuthStatus.none ||
+          server.oauthTokens != null) {
         oauthProvider = _createOAuthProvider(server);
         _oauthProviders[server.id] = oauthProvider;
       }
@@ -183,8 +186,11 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         // If listing tools fails with an invalid session error, retry with a fresh session
         if (e.toString().toLowerCase().contains('no valid session') ||
-            (e.toString().contains('400') && e.toString().toLowerCase().contains('session'))) {
-          debugPrint('MCP: Session invalid after initialize for ${server.name}, retrying fresh...');
+            (e.toString().contains('400') &&
+                e.toString().toLowerCase().contains('session'))) {
+          debugPrint(
+            'MCP: Session invalid after initialize for ${server.name}, retrying fresh...',
+          );
           await client.close();
           final freshClient = McpClientService(
             serverUrl: server.url,
@@ -204,7 +210,9 @@ class _ChatScreenState extends State<ChatScreen> {
             server.id,
             freshClient.sessionId,
           );
-          debugPrint('MCP: Fresh session established for ${server.name}: ${freshClient.sessionId}');
+          debugPrint(
+            'MCP: Fresh session established for ${server.name}: ${freshClient.sessionId}',
+          );
 
           // Update server OAuth status if it was previously pending
           if (server.oauthStatus == McpOAuthStatus.required ||
@@ -463,7 +471,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Complete OAuth for a server after successful token exchange
-  Future<void> _completeServerOAuth(McpServer server, McpOAuthTokens tokens) async {
+  Future<void> _completeServerOAuth(
+    McpServer server,
+    McpOAuthTokens tokens,
+  ) async {
     // Update OAuth provider with new tokens
     final provider = _oauthProviders[server.id];
     if (provider != null) {
@@ -1356,19 +1367,22 @@ class _ChatScreenState extends State<ChatScreen> {
                                   Icon(
                                     Icons.message_outlined,
                                     size: 64,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withValues(alpha: 0.5),
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.5),
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
                                     'Start a conversation',
-                                    style: Theme.of(context).textTheme.titleLarge,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
                                     'Type a message below to begin',
-                                    style: Theme.of(context).textTheme.bodyMedium
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
                                         ?.copyWith(
                                           color: Theme.of(
                                             context,
@@ -1380,7 +1394,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                              vertical: 4.0,
+                            ),
                             child: _buildCommandPalette(),
                           ),
                         ],
@@ -1449,7 +1466,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         final paletteAdjustedIndex = index - 1;
 
                         // Show auth required card
-                        if (_authenticationRequired && paletteAdjustedIndex == 0) {
+                        if (_authenticationRequired &&
+                            paletteAdjustedIndex == 0) {
                           return _buildAuthRequiredCard();
                         }
 
@@ -1801,6 +1819,21 @@ class _ChatScreenState extends State<ChatScreen> {
         spacing: 8,
         runSpacing: 8,
         children: [
+          if (_mcpServers.isNotEmpty)
+            ActionChip(
+              avatar: Icon(
+                Icons.auto_awesome,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              label: const Text('Prompts'),
+              onPressed: _openMcpPromptsScreen,
+              side: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.5),
+              ),
+            ),
           ActionChip(
             avatar: Icon(
               Icons.dns,
@@ -1844,9 +1877,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final selectedServerIds = await showDialog<List<String>>(
       context: context,
-      builder: (context) => McpServerSelectionDialog(
-        initialSelectedServerIds: currentServerIds,
-      ),
+      builder: (context) =>
+          McpServerSelectionDialog(initialSelectedServerIds: currentServerIds),
     );
 
     // User cancelled
@@ -1856,8 +1888,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final currentIds = currentServerIds.toSet();
     final newIds = selectedServerIds.toSet();
 
-    if (currentIds.length == newIds.length &&
-        currentIds.containsAll(newIds)) {
+    if (currentIds.length == newIds.length && currentIds.containsAll(newIds)) {
       return; // No change
     }
 
@@ -1918,12 +1949,36 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'MCP servers updated (${_mcpServers.length} active)',
-          ),
+          content: Text('MCP servers updated (${_mcpServers.length} active)'),
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  Future<void> _openMcpPromptsScreen() async {
+    final result = await Navigator.push<PromptSelectionResult>(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            McpPromptsScreen(servers: _mcpServers, clients: _mcpClients),
+      ),
+    );
+
+    if (result != null && mounted) {
+      // Extract text from the prompt messages and inject into chat
+      final textParts = <String>[];
+      for (final msg in result.messages) {
+        if (msg.content is TextContent) {
+          textParts.add((msg.content as TextContent).text);
+        }
+      }
+
+      if (textParts.isNotEmpty) {
+        final promptText = textParts.join('\n\n');
+        _messageController.text = promptText;
+        _focusNode.requestFocus();
+      }
     }
   }
 
