@@ -1247,6 +1247,119 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Regenerate the last assistant response.
+  /// Deletes all messages from the last assistant turn (assistant message +
+  /// associated tool call/result messages) and re-sends the conversation.
+  Future<void> _regenerateLastResponse(ConversationProvider provider) async {
+    if (_isLoading) return;
+
+    final messages = provider.getMessages(widget.conversation.id);
+    if (messages.isEmpty) return;
+
+    // Walk backwards from the end to find the start of the last assistant turn.
+    // A "turn" includes: the final assistant message, plus any preceding
+    // assistant+tool message pairs that belong to that turn (i.e. all messages
+    // after the last user message).
+    int lastUserIndex = -1;
+    for (int i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role == MessageRole.user) {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    if (lastUserIndex < 0) return; // No user message found — nothing to retry
+
+    // Delete all messages after the last user message (the entire assistant turn)
+    final messagesToDelete = messages.sublist(lastUserIndex + 1);
+    for (final msg in messagesToDelete) {
+      await provider.deleteMessage(msg.id);
+    }
+
+    // Now re-send: set loading state and trigger the agentic loop
+    setState(() {
+      _isLoading = true;
+      _streamingContent = '';
+      _streamingReasoning = '';
+      _authenticationRequired = false;
+      _respondedElicitationIds.clear();
+    });
+
+    try {
+      final openRouterService = context.read<OpenRouterService>();
+
+      // Initialize ChatService if needed
+      if (_chatService == null) {
+        final serverNames = <String, String>{};
+        for (final server in _mcpServers) {
+          serverNames[server.id] = server.name;
+        }
+
+        _chatService = ChatService(
+          openRouterService: openRouterService,
+          mcpClients: _mcpClients,
+          mcpTools: _mcpTools,
+          serverNames: serverNames,
+        );
+
+        _chatService!.events.listen((event) {
+          _handleChatEvent(event, provider);
+        });
+      }
+
+      // Get remaining messages for context
+      final remainingMessages = provider.getMessages(widget.conversation.id);
+
+      final modelSupportsImages =
+          _modelDetails != null &&
+          _modelDetails!['architecture'] != null &&
+          (_modelDetails!['architecture']['input_modalities'] as List?)
+                  ?.contains('image') ==
+              true;
+
+      final modelSupportsAudio =
+          _modelDetails != null &&
+          _modelDetails!['architecture'] != null &&
+          (_modelDetails!['architecture']['input_modalities'] as List?)
+                  ?.contains('audio') ==
+              true;
+
+      final maxToolCalls = await DefaultModelService.getMaxToolCalls();
+
+      await _chatService!.runAgenticLoop(
+        conversationId: widget.conversation.id,
+        model: widget.conversation.model,
+        messages: List.from(remainingMessages),
+        maxIterations: maxToolCalls,
+        modelSupportsImages: modelSupportsImages,
+        modelSupportsAudio: modelSupportsAudio,
+      );
+    } on OpenRouterAuthException {
+      _handleAuthError();
+    } catch (e, stackTrace) {
+      print('Error in _regenerateLastResponse: $e');
+      print('Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _streamingContent = '';
+          _streamingReasoning = '';
+          _currentToolName = null;
+          _isToolExecuting = false;
+        });
+      }
+    }
+  }
+
   Future<void> _editMessage(
     Message message,
     ConversationProvider provider,
@@ -1507,6 +1620,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
                       return true;
                     }).toList();
+
+                    // Find the last assistant message with actual content
+                    // (for the regenerate button). We only show regenerate on
+                    // the final visible assistant bubble, and only when not loading.
+                    String? lastAssistantContentMessageId;
+                    if (!_isLoading) {
+                      for (int i = displayMessages.length - 1; i >= 0; i--) {
+                        final m = displayMessages[i];
+                        if (m.role == MessageRole.assistant &&
+                            m.content.isNotEmpty &&
+                            m.toolCallData == null) {
+                          lastAssistantContentMessageId = m.id;
+                          break;
+                        }
+                      }
+                    }
 
                     // Calculate total item count
                     final hasStreaming =
@@ -1813,6 +1942,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           onDelete: () => _deleteMessage(message.id, provider),
                           onEdit: message.role == MessageRole.user
                               ? () => _editMessage(message, provider)
+                              : null,
+                          onRegenerate: message.id == lastAssistantContentMessageId
+                              ? () => _regenerateLastResponse(provider)
                               : null,
                         );
                       },

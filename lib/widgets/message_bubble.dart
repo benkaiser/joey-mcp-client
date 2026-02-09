@@ -13,6 +13,7 @@ class MessageBubble extends StatelessWidget {
   final bool showThinking;
   final VoidCallback? onDelete;
   final VoidCallback? onEdit;
+  final VoidCallback? onRegenerate;
 
   const MessageBubble({
     super.key,
@@ -21,6 +22,7 @@ class MessageBubble extends StatelessWidget {
     this.showThinking = true,
     this.onDelete,
     this.onEdit,
+    this.onRegenerate,
   });
 
   @override
@@ -308,6 +310,13 @@ class MessageBubble extends StatelessWidget {
                         onPressed: () =>
                             _copyToClipboard(context, showThinking),
                       ),
+                      if (onRegenerate != null)
+                        _buildActionButton(
+                          context: context,
+                          icon: Icons.refresh,
+                          tooltip: 'Regenerate',
+                          onPressed: onRegenerate,
+                        ),
                       if (onDelete != null)
                         _buildActionButton(
                           context: context,
