@@ -7,7 +7,7 @@ class DefaultModelService {
   static const String _showThinkingKey = 'show_thinking';
   static const String _maxToolCallsKey = 'max_tool_calls';
   static const int _defaultMaxToolCalls = 10;
-  static const String _defaultSystemPrompt = 'You are a helpful assistant.\nUse markdown when rendering your responses.';
+  static const String _defaultSystemPrompt = 'You are a helpful assistant.\nUse markdown when rendering your responses.\nYou can use mermaid diagrams in your responses when they help illustrate concepts, workflows, or relationships.';
 
   static Future<String?> getDefaultModel() async {
     final prefs = await SharedPreferences.getInstance();
