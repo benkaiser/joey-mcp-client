@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_smooth_markdown/flutter_smooth_markdown.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
@@ -193,55 +193,77 @@ class MessageBubble extends StatelessWidget {
                                 ],
                                 // Assistant content - no bubble
                                 if (message.content.isNotEmpty)
-                                  SmoothMarkdown(
-                                  data: message.content,
-                                  useEnhancedComponents: true,
-                                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                                    h1Style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurface,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    h2Style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurface,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    h3Style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurface,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    codeBlockDecoration: BoxDecoration(
-                                      // Match the highlight theme's root background so the
-                                      // outer container and inner HighlightView are uniform.
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? const Color(0xff1E1E1E)   // vs2015 theme
-                                          : const Color(0xfff8f8f8),  // github theme
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    linkStyle: TextStyle(
-                                      color: Theme.of(context).colorScheme.primary,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                    blockquoteDecoration: BoxDecoration(
-                                      border: Border(
-                                        left: BorderSide(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          width: 4,
-                                        ),
+                                  MarkdownBody(
+                                    data: message.content,
+                                    shrinkWrap: true,
+                                    styleSheet: MarkdownStyleSheet(
+                                      p: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      code: TextStyle(
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      codeblockDecoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      blockquoteDecoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHigh,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      h1: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      h2: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      h3: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      listBullet: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                      a: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        decoration: TextDecoration.underline,
                                       ),
                                     ),
+                                    onTapLink: (text, href, title) {
+                                      if (href != null) {
+                                        launchUrl(
+                                          Uri.parse(href),
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                      }
+                                    },
                                   ),
-                                  onTapLink: (url) {
-                                    launchUrl(
-                                      Uri.parse(url),
-                                      mode: LaunchMode.externalApplication,
-                                    );
-                                  },
-                                  plugins: ParserPluginRegistry()..register(const MermaidPlugin()),
-                                  builderRegistry: BuilderRegistry()..register('mermaid', const MermaidBuilder()),
-                                ),
                                 // Render images from imageData if present
                                 if (message.imageData != null)
                                   ToolResultImages(
