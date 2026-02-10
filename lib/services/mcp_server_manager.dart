@@ -100,12 +100,12 @@ class McpServerManager {
       try {
         tools = await client.listTools();
       } catch (e) {
-        // If listing tools fails with an invalid session error, retry with a fresh session
-        if (e.toString().toLowerCase().contains('no valid session') ||
-            (e.toString().contains('400') &&
-                e.toString().toLowerCase().contains('session'))) {
+        // If we were resuming a session and listing tools fails for any reason
+        // (e.g. stale session, server-side "already connected to a transport",
+        // or any other session-related error), retry with a fresh session.
+        if (storedSessionId != null) {
           debugPrint(
-            'MCP: Session invalid after initialize for ${server.name}, retrying fresh...',
+            'MCP: Failed to list tools after session resume for ${server.name}: $e. Retrying with fresh session...',
           );
           await client.close();
           final freshClient = McpClientService(
@@ -225,5 +225,7 @@ class McpServerManager {
     for (final client in mcpClients.values) {
       await client.close();
     }
+    mcpClients.clear();
+    mcpTools.clear();
   }
 }
