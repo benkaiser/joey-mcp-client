@@ -774,11 +774,21 @@ class McpClientService {
   /// Close the connection
   Future<void> close() async {
     try {
-      await _client?.close();
-      await _transport?.close();
+      // _client.close() delegates to _transport.close() internally,
+      // so we only need to close the client. Closing the transport
+      // separately would double-close the abort controller.
+      if (_client != null) {
+        await _client!.close();
+      } else {
+        // If client was never set (e.g. init failed), close transport directly
+        await _transport?.close();
+      }
       print('MCP: Connection closed');
     } catch (e) {
       print('MCP: Error closing connection: $e');
+    } finally {
+      _client = null;
+      _transport = null;
     }
   }
 
