@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_smooth_markdown/flutter_smooth_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
@@ -125,33 +125,33 @@ class MessageBubble extends StatelessWidget {
                         )
                       : Focus(
                           autofocus: false,
-                          child: SelectionArea(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Show reasoning if present (for assistant messages)
-                                if (message.reasoning != null &&
-                                    message.reasoning!.isNotEmpty) ...[
-                                  if (showThinking)
-                                    // Full reasoning text when thinking is enabled
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 2,
-                                          ),
-                                          child: Icon(
-                                            Icons.psychology_outlined,
-                                            size: 14,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Show reasoning if present (for assistant messages)
+                              if (message.reasoning != null &&
+                                  message.reasoning!.isNotEmpty) ...[
+                                if (showThinking)
+                                  // Full reasoning text when thinking is enabled
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 2,
                                         ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
+                                        child: Icon(
+                                          Icons.psychology_outlined,
+                                          size: 14,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: SelectionArea(
                                           child: Text(
                                             message.reasoning!,
                                             style: TextStyle(
@@ -163,134 +163,142 @@ class MessageBubble extends StatelessWidget {
                                             ),
                                           ),
                                         ),
-                                      ],
-                                    )
-                                  else
-                                    // Just "Thinking..." indicator when thinking is hidden
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.psychology_outlined,
-                                          size: 14,
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  // Just "Thinking..." indicator when thinking is hidden
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.psychology_outlined,
+                                        size: 14,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Thinking...',
+                                        style: TextStyle(
                                           color: Theme.of(
                                             context,
                                           ).colorScheme.onSurfaceVariant,
+                                          fontSize: 13,
+                                          fontStyle: FontStyle.italic,
                                         ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          'Thinking...',
-                                          style: TextStyle(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                            fontSize: 13,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
+                                      ),
+                                    ],
+                                  ),
+                                const SizedBox(height: 12),
+                              ],
+                              // Assistant content - no bubble
+                              if (message.content.isNotEmpty)
+                                SmoothMarkdown(
+                                  data: message.content,
+                                  selectable: true,
+                                  useEnhancedComponents: true,
+                                  plugins: ParserPluginRegistry()
+                                    ..register(const MermaidPlugin()),
+                                  builderRegistry: BuilderRegistry()
+                                    ..register(
+                                      'mermaid',
+                                      const MermaidBuilder(),
                                     ),
-                                  const SizedBox(height: 12),
-                                ],
-                                // Assistant content - no bubble
-                                if (message.content.isNotEmpty)
-                                  MarkdownBody(
-                                    data: message.content,
-                                    shrinkWrap: true,
-                                    styleSheet: MarkdownStyleSheet(
-                                      p: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                      code: TextStyle(
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.surfaceContainerHigh,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                      codeblockDecoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.surfaceContainerHigh,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      blockquoteDecoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.surfaceContainerHigh,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      h1: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      h2: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      h3: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      listBullet: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                      a: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                        decoration: TextDecoration.underline,
-                                      ),
+                                  styleSheet: MarkdownStyleSheet.fromTheme(
+                                    Theme.of(context),
+                                  ).copyWith(
+                                    textStyle: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
                                     ),
-                                    onTapLink: (text, href, title) {
-                                      if (href != null) {
-                                        launchUrl(
-                                          Uri.parse(href),
-                                          mode: LaunchMode.externalApplication,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                // Render images from imageData if present
-                                if (message.imageData != null)
-                                  ToolResultImages(
-                                    imageDataJson: message.imageData!,
-                                    messageId: message.id,
-                                  ),
-                                // Render audio players from audioData if present
-                                if (message.audioData != null)
-                                  ToolResultAudio(
-                                    audioDataJson: message.audioData!,
-                                    messageId: message.id,
-                                  ),
-                                if (isStreaming) ...[
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    width: 8,
-                                    height: 12,
-                                    decoration: BoxDecoration(
+                                    inlineCodeStyle: TextStyle(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHigh,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                    codeBlockDecoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHigh,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    blockquoteDecoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHigh,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    h1Style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    h2Style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    h3Style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    listBulletStyle: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                    linkStyle: TextStyle(
                                       color: Theme.of(
                                         context,
                                       ).colorScheme.primary,
-                                      borderRadius: BorderRadius.circular(2),
+                                      decoration: TextDecoration.underline,
                                     ),
                                   ),
-                                ],
+                                  onTapLink: (url) {
+                                    launchUrl(
+                                      Uri.parse(url),
+                                      mode: LaunchMode.externalApplication,
+                                    );
+                                  },
+                                ),
+                              // Render images from imageData if present
+                              if (message.imageData != null)
+                                ToolResultImages(
+                                  imageDataJson: message.imageData!,
+                                  messageId: message.id,
+                                ),
+                              // Render audio players from audioData if present
+                              if (message.audioData != null)
+                                ToolResultAudio(
+                                  audioDataJson: message.audioData!,
+                                  messageId: message.id,
+                                ),
+                              if (isStreaming) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  width: 8,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
                               ],
-                            ),
+                            ],
                           ),
                         ),
                 const SizedBox(height: 4),
