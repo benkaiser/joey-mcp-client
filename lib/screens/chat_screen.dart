@@ -19,6 +19,7 @@ import '../utils/image_attachment_handler.dart';
 import 'chat_event_handler.dart';
 import 'conversation_actions.dart';
 import '../widgets/auth_required_card.dart';
+import '../widgets/edit_message_dialog.dart';
 import '../widgets/loading_status_indicator.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/message_input.dart';
@@ -649,51 +650,17 @@ class _ChatScreenState extends State<ChatScreen>
     Message message,
     ConversationProvider provider,
   ) async {
-    final controller = TextEditingController(text: message.content);
-
-    final result = await showDialog<String>(
+    final result = await showDialog<EditMessageResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Message'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Edit your message below. All messages after this one will be removed, and the conversation will continue from this point.',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Type your message...',
-              ),
-              maxLines: null,
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Edit and Resend'),
-          ),
-        ],
+      builder: (context) => EditMessageDialog(
+        initialText: message.content,
+        imageDataJson: message.imageData,
       ),
     );
 
-    controller.dispose();
-
-    if (result != null && result.isNotEmpty && mounted) {
+    if (result != null &&
+        (result.text.isNotEmpty || result.images.isNotEmpty) &&
+        mounted) {
       // Get all messages in the conversation
       final allMessages = provider.getMessages(widget.conversation.id);
 
@@ -706,8 +673,15 @@ class _ChatScreenState extends State<ChatScreen>
           await provider.deleteMessage(allMessages[i].id);
         }
 
+        // Restore surviving images into the image handler so _sendMessage
+        // picks them up when building the new Message.
+        _imageHandler.clear();
+        for (final img in result.images) {
+          _imageHandler.pendingImages.add(img);
+        }
+
         // Set the edited text in the message controller and trigger normal send flow
-        _messageController.text = result;
+        _messageController.text = result.text;
         await _sendMessage();
       }
     }
