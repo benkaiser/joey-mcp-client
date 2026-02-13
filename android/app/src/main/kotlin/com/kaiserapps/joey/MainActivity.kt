@@ -1,4 +1,4 @@
-package com.example.joey_mcp_client_flutter
+package com.kaiserapps.joey
 
 import io.flutter.embedding.android.FlutterActivity
 

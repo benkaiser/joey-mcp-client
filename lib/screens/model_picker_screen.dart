@@ -19,6 +19,10 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
   String? _errorMessage;
   String _searchQuery = '';
   String? _selectedDefaultModel;
+  Set<String> _selectedInputModalities = {};
+  Set<String> _selectedOutputModalities = {};
+  Set<String> _availableInputModalities = {};
+  Set<String> _availableOutputModalities = {};
 
   @override
   void initState() {
@@ -35,8 +39,19 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
 
     try {
       final models = await _openRouterService.getModels();
+      final inputModalities = <String>{};
+      final outputModalities = <String>{};
+      for (final model in models) {
+        final architecture = model['architecture'] as Map<String, dynamic>?;
+        final inputMods = (architecture?['input_modalities'] as List?)?.cast<String>() ?? ['text'];
+        final outputMods = (architecture?['output_modalities'] as List?)?.cast<String>() ?? ['text'];
+        inputModalities.addAll(inputMods);
+        outputModalities.addAll(outputMods);
+      }
       setState(() {
         _models = models;
+        _availableInputModalities = inputModalities;
+        _availableOutputModalities = outputModalities;
         _isLoading = false;
       });
     } on OpenRouterAuthException {
@@ -56,13 +71,40 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
 
   List<Map<String, dynamic>> get _filteredModels {
     if (_models == null) return [];
-    if (_searchQuery.isEmpty) return _models!;
 
     return _models!.where((model) {
       final name = (model['name'] as String? ?? '').toLowerCase();
       final id = (model['id'] as String? ?? '').toLowerCase();
-      final query = _searchQuery.toLowerCase();
-      return name.contains(query) || id.contains(query);
+
+      // Multi-word search: every word must match somewhere in name or id
+      if (_searchQuery.isNotEmpty) {
+        final words = _searchQuery.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+        for (final word in words) {
+          if (!name.contains(word) && !id.contains(word)) {
+            return false;
+          }
+        }
+      }
+
+      // Input modality filter
+      if (_selectedInputModalities.isNotEmpty) {
+        final architecture = model['architecture'] as Map<String, dynamic>?;
+        final inputMods = (architecture?['input_modalities'] as List?)?.cast<String>() ?? ['text'];
+        if (!_selectedInputModalities.every((m) => inputMods.contains(m))) {
+          return false;
+        }
+      }
+
+      // Output modality filter
+      if (_selectedOutputModalities.isNotEmpty) {
+        final architecture = model['architecture'] as Map<String, dynamic>?;
+        final outputMods = (architecture?['output_modalities'] as List?)?.cast<String>() ?? ['text'];
+        if (!_selectedOutputModalities.every((m) => outputMods.contains(m))) {
+          return false;
+        }
+      }
+
+      return true;
     }).toList();
   }
 
@@ -103,6 +145,40 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
               },
             ),
           ),
+
+          // Modality filters
+          if (_availableInputModalities.isNotEmpty || _availableOutputModalities.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_availableInputModalities.isNotEmpty)
+                    _ModalityFilterRow(
+                      label: 'Input',
+                      available: _availableInputModalities,
+                      selected: _selectedInputModalities,
+                      onChanged: (modalities) {
+                        setState(() {
+                          _selectedInputModalities = modalities;
+                        });
+                      },
+                    ),
+                  if (_availableOutputModalities.isNotEmpty)
+                    _ModalityFilterRow(
+                      label: 'Output',
+                      available: _availableOutputModalities,
+                      selected: _selectedOutputModalities,
+                      onChanged: (modalities) {
+                        setState(() {
+                          _selectedOutputModalities = modalities;
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
 
           // Model list
           Expanded(child: _buildContent()),
@@ -223,6 +299,9 @@ class _ModelListItem extends StatelessWidget {
     final inputModalities =
         (architecture?['input_modalities'] as List?)?.cast<String>() ??
         ['text'];
+    final outputModalities =
+        (architecture?['output_modalities'] as List?)?.cast<String>() ??
+        ['text'];
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -326,7 +405,10 @@ class _ModelListItem extends StatelessWidget {
                       label: _formatPricing(pricing['completion']),
                     ),
                   for (final modality in inputModalities)
-                    _InfoChip(icon: _modalityIcon(modality), label: modality),
+                    _InfoChip(icon: _modalityIcon(modality), label: '↓$modality'),
+                  for (final modality in outputModalities)
+                    if (modality != 'text')
+                      _InfoChip(icon: _modalityIcon(modality), label: '↑$modality'),
                 ],
               ),
             ],
@@ -373,6 +455,75 @@ class _ModelListItem extends StatelessWidget {
     } else {
       return '${pricePerMillion.toStringAsFixed(2)}/M out';
     }
+  }
+}
+
+class _ModalityFilterRow extends StatelessWidget {
+  final String label;
+  final Set<String> available;
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onChanged;
+
+  const _ModalityFilterRow({
+    required this.label,
+    required this.available,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  static const _modalityOrder = ['text', 'image', 'audio', 'video', 'file'];
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = available.toList()
+      ..sort((a, b) {
+        final ai = _modalityOrder.indexOf(a);
+        final bi = _modalityOrder.indexOf(b);
+        return (ai == -1 ? 999 : ai).compareTo(bi == -1 ? 999 : bi);
+      });
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              '$label:',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: sorted.map((modality) {
+                final isSelected = selected.contains(modality);
+                return FilterChip(
+                  label: Text(modality),
+                  selected: isSelected,
+                  onSelected: (value) {
+                    final newSet = Set<String>.from(selected);
+                    if (value) {
+                      newSet.add(modality);
+                    } else {
+                      newSet.remove(modality);
+                    }
+                    onChanged(newSet);
+                  },
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  labelStyle: const TextStyle(fontSize: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
