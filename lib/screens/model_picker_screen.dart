@@ -2,6 +2,21 @@ import 'package:flutter/material.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
 
+enum _SortOption {
+  none('Default'),
+  outputPriceAsc('Output price (low to high)'),
+  outputPriceDesc('Output price (high to low)'),
+  inputPriceAsc('Input price (low to high)'),
+  inputPriceDesc('Input price (high to low)'),
+  contextLengthAsc('Context length (low to high)'),
+  contextLengthDesc('Context length (high to low)'),
+  nameAsc('Name (A-Z)'),
+  nameDesc('Name (Z-A)');
+
+  final String label;
+  const _SortOption(this.label);
+}
+
 class ModelPickerScreen extends StatefulWidget {
   final String? defaultModel;
   final bool showDefaultToggle;
@@ -23,6 +38,10 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
   Set<String> _selectedOutputModalities = {};
   Set<String> _availableInputModalities = {};
   Set<String> _availableOutputModalities = {};
+  _SortOption _sortOption = _SortOption.none;
+
+  // Modalities we don't support yet — hide from filter UI
+  static const _hiddenModalities = {'video', 'file'};
 
   @override
   void initState() {
@@ -50,8 +69,8 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
       }
       setState(() {
         _models = models;
-        _availableInputModalities = inputModalities;
-        _availableOutputModalities = outputModalities;
+        _availableInputModalities = inputModalities.difference(_hiddenModalities);
+        _availableOutputModalities = outputModalities.difference(_hiddenModalities);
         _isLoading = false;
       });
     } on OpenRouterAuthException {
@@ -72,7 +91,7 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
   List<Map<String, dynamic>> get _filteredModels {
     if (_models == null) return [];
 
-    return _models!.where((model) {
+    final filtered = _models!.where((model) {
       final name = (model['name'] as String? ?? '').toLowerCase();
       final id = (model['id'] as String? ?? '').toLowerCase();
 
@@ -106,6 +125,51 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
 
       return true;
     }).toList();
+
+    if (_sortOption != _SortOption.none) {
+      filtered.sort((a, b) {
+        switch (_sortOption) {
+          case _SortOption.outputPriceAsc:
+          case _SortOption.outputPriceDesc:
+            final aPrice = _parsePrice(a, 'completion');
+            final bPrice = _parsePrice(b, 'completion');
+            return _sortOption == _SortOption.outputPriceAsc
+                ? aPrice.compareTo(bPrice)
+                : bPrice.compareTo(aPrice);
+          case _SortOption.inputPriceAsc:
+          case _SortOption.inputPriceDesc:
+            final aPrice = _parsePrice(a, 'prompt');
+            final bPrice = _parsePrice(b, 'prompt');
+            return _sortOption == _SortOption.inputPriceAsc
+                ? aPrice.compareTo(bPrice)
+                : bPrice.compareTo(aPrice);
+          case _SortOption.contextLengthAsc:
+          case _SortOption.contextLengthDesc:
+            final aCtx = a['context_length'] as int? ?? 0;
+            final bCtx = b['context_length'] as int? ?? 0;
+            return _sortOption == _SortOption.contextLengthAsc
+                ? aCtx.compareTo(bCtx)
+                : bCtx.compareTo(aCtx);
+          case _SortOption.nameAsc:
+          case _SortOption.nameDesc:
+            final aName = (a['name'] as String? ?? '').toLowerCase();
+            final bName = (b['name'] as String? ?? '').toLowerCase();
+            return _sortOption == _SortOption.nameAsc
+                ? aName.compareTo(bName)
+                : bName.compareTo(aName);
+          case _SortOption.none:
+            return 0;
+        }
+      });
+    }
+
+    return filtered;
+  }
+
+  double _parsePrice(Map<String, dynamic> model, String key) {
+    final pricing = model['pricing'] as Map<String, dynamic>?;
+    if (pricing == null) return 0.0;
+    return double.tryParse(pricing[key]?.toString() ?? '') ?? 0.0;
   }
 
   @override
@@ -179,6 +243,42 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
                 ],
               ),
             ),
+
+          // Sort dropdown
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+                const Icon(Icons.sort, size: 18),
+                const SizedBox(width: 8),
+                Text('Sort:', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<_SortOption>(
+                    value: _sortOption,
+                    isExpanded: true,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    items: _SortOption.values.map((option) {
+                      return DropdownMenuItem(
+                        value: option,
+                        child: Text(option.label),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _sortOption = value;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
 
           // Model list
           Expanded(child: _buildContent()),
