@@ -344,10 +344,12 @@ class _McpServerDialogState extends State<_McpServerDialog> {
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
-                  Text(
-                    'OAuth Configuration (if required)',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  Flexible(
+                    child: Text(
+                      'OAuth Configuration (if required)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),

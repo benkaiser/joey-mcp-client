@@ -89,7 +89,6 @@ class _AuthScreenState extends State<AuthScreen> {
   /// Start OAuth flow by opening OpenRouter in browser
   Future<void> _startAuth() async {
     setState(() {
-      _isAuthenticating = true;
       _errorMessage = null;
     });
 
@@ -105,7 +104,6 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to start authentication: ${e.toString()}';
-        _isAuthenticating = false;
       });
     }
   }

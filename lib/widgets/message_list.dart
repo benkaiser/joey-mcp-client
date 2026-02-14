@@ -25,6 +25,7 @@ class MessageList extends StatelessWidget {
   // Callbacks
   final Widget Function() buildCommandPalette;
   final Widget Function() buildAuthRequiredCard;
+  final Widget Function()? buildLoadingIndicator;
   final Future<void> Function(String messageId, ConversationProvider provider)
       onDeleteMessage;
   final Future<void> Function(Message message, ConversationProvider provider)
@@ -54,6 +55,7 @@ class MessageList extends StatelessWidget {
     required this.scrollController,
     required this.buildCommandPalette,
     required this.buildAuthRequiredCard,
+    this.buildLoadingIndicator,
     required this.onDeleteMessage,
     required this.onEditMessage,
     required this.onRegenerateLastResponse,
@@ -163,9 +165,11 @@ class MessageList extends StatelessWidget {
         final hasStreaming =
             streamingContent.isNotEmpty ||
             streamingReasoning.isNotEmpty;
+        final hasLoadingIndicator = buildLoadingIndicator != null;
         final itemCount =
             displayMessages.length +
             1 + // command palette
+            (hasLoadingIndicator ? 1 : 0) +
             (hasStreaming ? 1 : 0) +
             (authenticationRequired ? 1 : 0);
 
@@ -178,8 +182,9 @@ class MessageList extends StatelessWidget {
             // Since list is reversed, index 0 is the bottom (newest)
             // We need to map reversed index to actual items:
             // - Index 0: command palette
-            // - Index 1: auth card (if present) or streaming (if present) or last message
-            // - Index 2: streaming (if auth present) or messages
+            // - Index 1: loading indicator (if present)
+            // - Next: auth card (if present)
+            // - Next: streaming (if present)
             // - Higher indices: older messages
 
             // Show command palette at index 0 (bottom)
@@ -188,21 +193,22 @@ class MessageList extends StatelessWidget {
             }
 
             // Shift by 1 for command palette
-            final paletteAdjustedIndex = index - 1;
+            var currentIndex = index - 1;
+
+            // Show loading indicator right above command palette
+            if (hasLoadingIndicator && currentIndex == 0) {
+              return buildLoadingIndicator!();
+            }
+            if (hasLoadingIndicator) currentIndex--;
 
             // Show auth required card
-            if (authenticationRequired &&
-                paletteAdjustedIndex == 0) {
+            if (authenticationRequired && currentIndex == 0) {
               return buildAuthRequiredCard();
             }
+            if (authenticationRequired) currentIndex--;
 
-            // Adjust index if auth card is present
-            final adjustedIndex = authenticationRequired
-                ? paletteAdjustedIndex - 1
-                : paletteAdjustedIndex;
-
-            // Show streaming content at adjusted index 0
-            if (hasStreaming && adjustedIndex == 0) {
+            // Show streaming content
+            if (hasStreaming && currentIndex == 0) {
               final streamingMessage = Message(
                 id: 'streaming',
                 conversationId: conversationId,
@@ -224,8 +230,8 @@ class MessageList extends StatelessWidget {
 
             // Calculate message index (reversed: higher index = older message)
             final messageIndex = hasStreaming
-                ? adjustedIndex - 1
-                : adjustedIndex;
+                ? currentIndex - 1
+                : currentIndex;
             // Map to actual message (from end of list for reversed display)
             final actualMessageIndex =
                 displayMessages.length - 1 - messageIndex;

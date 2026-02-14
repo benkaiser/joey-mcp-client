@@ -62,5 +62,11 @@
 	<array>
 		<string>applinks:openrouterauth.benkaiser.dev</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Joey needs access to your camera to take photos for sending in chat messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Joey needs access to your photo library to attach images to chat messages.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Joey needs access to your microphone to record audio for chat messages.</string>
 </dict>
 </plist>

@@ -828,6 +828,13 @@ class _ChatScreenState extends State<ChatScreen>
                   scrollController: _scrollController,
                   buildCommandPalette: _buildCommandPalette,
                   buildAuthRequiredCard: _buildAuthRequiredCard,
+                  buildLoadingIndicator: _isLoading
+                      ? () => LoadingStatusIndicator(
+                            currentToolName: _currentToolName,
+                            isToolExecuting: _isToolExecuting,
+                            currentProgress: _currentProgress,
+                          )
+                      : null,
                   onDeleteMessage: _deleteMessage,
                   onEditMessage: _editMessage,
                   onRegenerateLastResponse: _regenerateLastResponse,
@@ -835,12 +842,6 @@ class _ChatScreenState extends State<ChatScreen>
                   onFormElicitationResponse: _handleFormElicitationResponse,
                 ),
               ),
-              if (_isLoading)
-                LoadingStatusIndicator(
-                  currentToolName: _currentToolName,
-                  isToolExecuting: _isToolExecuting,
-                  currentProgress: _currentProgress,
-                ),
               _buildMessageInput(),
             ],
           ),
