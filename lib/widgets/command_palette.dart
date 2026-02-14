@@ -20,59 +20,64 @@ class CommandPalette extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          if (mcpServers.isNotEmpty)
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            if (mcpServers.isNotEmpty) ...[
+              ActionChip(
+                avatar: Icon(
+                  Icons.auto_awesome,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                label: const Text('Prompts'),
+                onPressed: onOpenPrompts,
+                side: BorderSide(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             ActionChip(
               avatar: Icon(
-                Icons.auto_awesome,
+                Icons.dns,
                 size: 18,
-                color: Theme.of(context).colorScheme.primary,
+                color: mcpServers.isNotEmpty
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              label: const Text('Prompts'),
-              onPressed: onOpenPrompts,
+              label: Text(
+                mcpServers.isNotEmpty
+                    ? 'MCP Servers (${mcpServers.length})'
+                    : 'MCP Servers',
+              ),
+              onPressed: onOpenServers,
               side: BorderSide(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.5),
+                color: mcpServers.isNotEmpty
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                    : Theme.of(context).colorScheme.outlineVariant,
               ),
             ),
-          ActionChip(
-            avatar: Icon(
-              Icons.dns,
-              size: 18,
-              color: mcpServers.isNotEmpty
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            label: Text(
-              mcpServers.isNotEmpty
-                  ? 'MCP Servers (${mcpServers.length})'
-                  : 'MCP Servers',
-            ),
-            onPressed: onOpenServers,
-            side: BorderSide(
-              color: mcpServers.isNotEmpty
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-                  : Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
-          if (mcpServers.isNotEmpty)
-            ActionChip(
-              avatar: Icon(
-                Icons.bug_report_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (mcpServers.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              ActionChip(
+                avatar: Icon(
+                  Icons.bug_report_outlined,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                label: const Text('Debug'),
+                onPressed: onOpenDebug,
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
               ),
-              label: const Text('Debug'),
-              onPressed: onOpenDebug,
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
