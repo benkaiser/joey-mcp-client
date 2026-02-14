@@ -51,7 +51,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.joey.mcp.client</string>
+			<string>com.kaiserapps.joey</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>joey</string>
