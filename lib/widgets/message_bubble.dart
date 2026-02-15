@@ -83,6 +83,15 @@ class MessageBubble extends StatelessWidget {
                               messageId: message.id,
                             ),
                           ),
+                        // Show attached audio players
+                        if (message.audioData != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: ToolResultAudio(
+                              audioDataJson: message.audioData!,
+                              messageId: message.id,
+                            ),
+                          ),
                         if (message.content.isNotEmpty)
                           SelectableText(
                             message.content,

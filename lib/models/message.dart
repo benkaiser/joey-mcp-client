@@ -159,14 +159,16 @@ class Message {
       // Regular user/assistant message
       final apiRole = role == MessageRole.user ? 'user' : 'assistant';
 
-      // If user message has image attachments, build multi-part content
-      if (role == MessageRole.user && imageData != null) {
-        try {
-          final images = jsonDecode(imageData!) as List;
-          if (images.isNotEmpty) {
-            final contentParts = <Map<String, dynamic>>[
-              {'type': 'text', 'text': content},
-            ];
+      // If user message has image or audio attachments, build multi-part content
+      if (role == MessageRole.user && (imageData != null || audioData != null)) {
+        final contentParts = <Map<String, dynamic>>[
+          {'type': 'text', 'text': content},
+        ];
+
+        // Add image parts
+        if (imageData != null) {
+          try {
+            final images = jsonDecode(imageData!) as List;
             for (final img in images) {
               final data = img['data'] as String;
               final mimeType = img['mimeType'] as String? ?? 'image/png';
@@ -175,14 +177,56 @@ class Message {
                 'image_url': {'url': 'data:$mimeType;base64,$data'},
               });
             }
-            return {'role': apiRole, 'content': contentParts};
+          } catch (e) {
+            // Ignore image parse errors
           }
-        } catch (e) {
-          // Fall through to plain text
+        }
+
+        // Add audio parts
+        if (audioData != null) {
+          try {
+            final audioList = jsonDecode(audioData!) as List;
+            for (final audio in audioList) {
+              final data = audio['data'] as String;
+              final mimeType = audio['mimeType'] as String? ?? 'audio/wav';
+              contentParts.add({
+                'type': 'input_audio',
+                'input_audio': {
+                  'data': data,
+                  'format': _audioFormatFromMimeType(mimeType),
+                },
+              });
+            }
+          } catch (e) {
+            // Ignore audio parse errors
+          }
+        }
+
+        if (contentParts.length > 1) {
+          return {'role': apiRole, 'content': contentParts};
         }
       }
 
       return {'role': apiRole, 'content': content};
     }
+  }
+
+  /// Convert audio MIME type to OpenRouter format string
+  static String _audioFormatFromMimeType(String mimeType) {
+    const mimeToFormat = {
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/x-wav': 'wav',
+      'audio/wave': 'wav',
+      'audio/aac': 'aac',
+      'audio/ogg': 'ogg',
+      'audio/flac': 'flac',
+      'audio/mp4': 'm4a',
+      'audio/x-m4a': 'm4a',
+      'audio/m4a': 'm4a',
+      'audio/webm': 'webm',
+    };
+    return mimeToFormat[mimeType] ?? mimeType.replaceFirst('audio/', '');
   }
 }

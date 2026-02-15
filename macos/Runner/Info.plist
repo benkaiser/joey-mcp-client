@@ -30,6 +30,8 @@
 	<string>NSApplication</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Joey needs access to your microphone to record audio for chat messages.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
