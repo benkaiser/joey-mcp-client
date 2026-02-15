@@ -70,7 +70,7 @@
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
-		33CC10ED2044A3C60003C045 /* joey_mcp_client_flutter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = joey_mcp_client_flutter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		33CC10ED2044A3C60003C045 /* Joey.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Joey.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		33CC10F22044A3C60003C045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Runner/Assets.xcassets; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
@@ -144,7 +144,7 @@
 		33CC10EE2044A3C60003C045 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				33CC10ED2044A3C60003C045 /* joey_mcp_client_flutter.app */,
+				33CC10ED2044A3C60003C045 /* Joey.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
 			);
 			name = Products;
@@ -195,7 +195,6 @@
 				DEAB8352D54AD73DBD5A6E40 /* Pods-RunnerTests.release.xcconfig */,
 				A9320734A708DD2CA7DD68D6 /* Pods-RunnerTests.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -249,7 +248,7 @@
 			);
 			name = Runner;
 			productName = Runner;
-			productReference = 33CC10ED2044A3C60003C045 /* joey_mcp_client_flutter.app */;
+			productReference = 33CC10ED2044A3C60003C045 /* Joey.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -479,7 +478,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.joeyMcpClientFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kaiserapps.joey.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/joey_mcp_client_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/joey_mcp_client_flutter";
@@ -494,7 +493,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.joeyMcpClientFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kaiserapps.joey.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/joey_mcp_client_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/joey_mcp_client_flutter";
@@ -509,7 +508,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.joeyMcpClientFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kaiserapps.joey.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/joey_mcp_client_flutter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/joey_mcp_client_flutter";
@@ -543,10 +542,11 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -574,7 +574,9 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -619,10 +621,11 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -675,10 +678,11 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -706,7 +710,9 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -726,7 +732,9 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 7YUK27P5X7;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
