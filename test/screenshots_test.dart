@@ -1215,6 +1215,126 @@ void main() {
       ),
     );
   });
+
+  group('App Store Screenshots:', () {
+    _screenshotIOS(
+      '1_conversation_list',
+      home: const _MockConversationListScreen(),
+    );
+
+    _screenshotIOS(
+      '2_chat_nutrition_tracking',
+      home: _MockChatScreen(
+        title: 'Log today\'s meals',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _nutritionToolMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotIOS(
+      '3_chat_habit_tracking',
+      home: _MockChatScreen(
+        title: 'My morning habits',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _habitTrackingMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotIOS(
+      '4_chat_recipe_search',
+      home: _MockChatScreen(
+        title: 'Quick dinner ideas',
+        model: 'google/gemini-2.5-pro',
+        messages: _knowledgeBaseMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotIOS(
+      '5_chat_mermaid_diagram',
+      home: _MockChatScreen(
+        title: 'My morning routine',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _mermaidMessages(),
+        mcpServerCount: 1,
+        scrollToTop: true,
+      ),
+    );
+
+    _screenshotIOS(
+      '6_chat_image_analysis',
+      home: _MockChatScreen(
+        title: 'Hiking trip planning',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _imageAnalysisMessages(),
+      ),
+    );
+  });
+
+  group('Mac App Store Screenshots:', () {
+    _screenshotMac(
+      '1_conversation_list',
+      home: const _MockConversationListScreen(),
+    );
+
+    _screenshotMac(
+      '2_chat_nutrition_tracking',
+      home: _MockChatScreen(
+        title: 'Log today\'s meals',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _nutritionToolMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotMac(
+      '3_chat_habit_tracking',
+      home: _MockChatScreen(
+        title: 'My morning habits',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _habitTrackingMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotMac(
+      '4_chat_recipe_search',
+      home: _MockChatScreen(
+        title: 'Quick dinner ideas',
+        model: 'google/gemini-2.5-pro',
+        messages: _knowledgeBaseMessages(),
+        showThinking: false,
+        mcpServerCount: 1,
+      ),
+    );
+
+    _screenshotMac(
+      '5_chat_mermaid_diagram',
+      home: _MockChatScreen(
+        title: 'My morning routine',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _mermaidMessages(),
+        mcpServerCount: 1,
+        scrollToTop: true,
+      ),
+    );
+
+    _screenshotMac(
+      '6_chat_image_analysis',
+      home: _MockChatScreen(
+        title: 'Hiking trip planning',
+        model: 'anthropic/claude-sonnet-4',
+        messages: _imageAnalysisMessages(),
+      ),
+    );
+  });
 }
 
 void _screenshot(
@@ -1226,6 +1346,88 @@ void _screenshot(
   final goldenDevices = [
     GoldenScreenshotDevices.androidPhone,
     GoldenScreenshotDevices.androidTablet,
+  ];
+
+  for (final goldenDevice in goldenDevices) {
+    testGoldens('$name for ${goldenDevice.name}', (tester) async {
+      final device = goldenDevice.device;
+
+      await _loadTestFonts();
+
+      await tester.pumpWidget(
+        ScreenshotApp(
+          device: device,
+          frameColors: frameColors ?? ScreenshotFrameColors.light,
+          themeMode: ThemeMode.dark,
+          darkTheme: _appDarkTheme,
+          debugShowCheckedModeBanner: false,
+          home: home,
+        ),
+      );
+
+      await tester.loadAssets();
+      await tester.pump();
+      await tester.pumpFrames(
+        tester.widget(find.byType(ScreenshotApp)),
+        const Duration(seconds: 1),
+      );
+
+      await tester.expectScreenshot(device, name);
+    });
+  }
+}
+
+// Custom iPhone 6.5" device for App Store (iPhone 11 Pro Max / XS Max)
+const _iphone65 = ScreenshotDevice(
+  platform: TargetPlatform.iOS,
+  resolution: Size(1284, 2778),
+  pixelRatio: 3,
+  goldenSubFolder: 'iphone65Screenshots/',
+  frameBuilder: ScreenshotFrame.iphone,
+);
+
+void _screenshotMac(
+  String name, {
+  required Widget home,
+  ScreenshotFrameColors? frameColors,
+}) {
+  testGoldens('$name for macbook', (tester) async {
+    final device = GoldenScreenshotDevices.macbook.device;
+
+    await _loadTestFonts();
+
+    await tester.pumpWidget(
+      ScreenshotApp(
+        device: device,
+        frameColors: frameColors ?? ScreenshotFrameColors.light,
+        themeMode: ThemeMode.dark,
+        darkTheme: _appDarkTheme,
+        debugShowCheckedModeBanner: false,
+        home: home,
+      ),
+    );
+
+    await tester.loadAssets();
+    await tester.pump();
+    await tester.pumpFrames(
+      tester.widget(find.byType(ScreenshotApp)),
+      const Duration(seconds: 1),
+    );
+
+    await tester.expectScreenshot(device, name);
+  });
+}
+
+void _screenshotIOS(
+  String name, {
+  required Widget home,
+  ScreenshotFrameColors? frameColors,
+}) {
+  // Generate for iPhone 6.9", iPhone 6.5", and iPad (App Store)
+  final goldenDevices = <({String name, ScreenshotDevice device})>[
+    (name: 'iphone', device: GoldenScreenshotDevices.iphone.device),
+    (name: 'iphone65', device: _iphone65),
+    (name: 'ipad', device: GoldenScreenshotDevices.ipad.device),
   ];
 
   for (final goldenDevice in goldenDevices) {
