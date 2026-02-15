@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   file_selector_windows
   pasteboard
+  record_windows
   screen_retriever_windows
   share_plus
   url_launcher_windows

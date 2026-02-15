@@ -15,6 +15,7 @@ import '../services/database_service.dart';
 import '../services/chat_service.dart';
 import '../services/mcp_oauth_manager.dart';
 import '../services/mcp_server_manager.dart';
+import '../utils/audio_attachment_handler.dart';
 import '../utils/image_attachment_handler.dart';
 import 'chat_event_handler.dart';
 import 'conversation_actions.dart';
@@ -62,6 +63,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   // Delegates
   final ImageAttachmentHandler _imageHandler = ImageAttachmentHandler();
+  final AudioAttachmentHandler _audioHandler = AudioAttachmentHandler();
   final McpOAuthManager _oauthManager = McpOAuthManager();
   final McpServerManager _serverManager = McpServerManager();
 
@@ -135,6 +137,9 @@ class _ChatScreenState extends State<ChatScreen>
 
     // Wire up image handler
     _imageHandler.onStateChanged = () => setState(() {});
+
+    // Wire up audio handler
+    _audioHandler.onStateChanged = () => setState(() {});
 
     // Wire up OAuth manager
     _oauthManager.onStateChanged = () => setState(() {});
@@ -231,6 +236,7 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollController.dispose();
     _focusNode.dispose();
     _chatService?.dispose();
+    _audioHandler.dispose();
     _oauthManager.dispose();
     _serverManager.dispose();
     super.dispose();
@@ -279,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen>
   Future<void> _sendMessage() async {
     try {
       final text = _messageController.text.trim();
-      if (text.isEmpty && _imageHandler.pendingImages.isEmpty) return;
+      if (text.isEmpty && _imageHandler.pendingImages.isEmpty && _audioHandler.pendingAudios.isEmpty) return;
 
       final provider = context.read<ConversationProvider>();
       final openRouterService = context.read<OpenRouterService>();
@@ -298,6 +304,20 @@ class _ChatScreenState extends State<ChatScreen>
         imageDataJson = jsonEncode(imageList);
       }
 
+      // Encode pending audios as base64 JSON
+      String? audioDataJson;
+      if (_audioHandler.pendingAudios.isNotEmpty) {
+        final audioList = _audioHandler.pendingAudios
+            .map(
+              (audio) => {
+                'data': base64Encode(audio.bytes),
+                'mimeType': audio.mimeType,
+              },
+            )
+            .toList();
+        audioDataJson = jsonEncode(audioList);
+      }
+
       // Add user message
       final userMessage = Message(
         id: const Uuid().v4(),
@@ -306,11 +326,13 @@ class _ChatScreenState extends State<ChatScreen>
         content: text,
         timestamp: DateTime.now(),
         imageData: imageDataJson,
+        audioData: audioDataJson,
       );
 
       await provider.addMessage(userMessage);
       _messageController.text = '';
       _imageHandler.clear();
+      _audioHandler.clear();
       setState(() {});
       _scrollToBottom();
 
@@ -655,11 +677,12 @@ class _ChatScreenState extends State<ChatScreen>
       builder: (context) => EditMessageDialog(
         initialText: message.content,
         imageDataJson: message.imageData,
+        audioDataJson: message.audioData,
       ),
     );
 
     if (result != null &&
-        (result.text.isNotEmpty || result.images.isNotEmpty) &&
+        (result.text.isNotEmpty || result.images.isNotEmpty || result.audios.isNotEmpty) &&
         mounted) {
       // Get all messages in the conversation
       final allMessages = provider.getMessages(widget.conversation.id);
@@ -678,6 +701,13 @@ class _ChatScreenState extends State<ChatScreen>
         _imageHandler.clear();
         for (final img in result.images) {
           _imageHandler.pendingImages.add(img);
+        }
+
+        // Restore surviving audios into the audio handler so _sendMessage
+        // picks them up when building the new Message.
+        _audioHandler.clear();
+        for (final audio in result.audios) {
+          _audioHandler.pendingAudios.add(audio);
         }
 
         // Set the edited text in the message controller and trigger normal send flow
@@ -982,12 +1012,22 @@ class _ChatScreenState extends State<ChatScreen>
       focusNode: _focusNode,
       isLoading: _isLoading,
       pendingImages: _imageHandler.pendingImages,
+      pendingAudios: _audioHandler.pendingAudios,
+      isRecording: _audioHandler.isRecording,
+      recordingDuration: _audioHandler.recordingDuration,
       onSend: _sendMessage,
       onStop: _stopMessage,
       onPickImageFromGallery: () => _imageHandler.pickImageFromGallery(context),
       onPickImageFromCamera: () => _imageHandler.pickImageFromCamera(context),
+      onPickAudioFile: () => _audioHandler.pickAudioFile(context),
+      onStartRecording: () => _audioHandler.startRecording(context),
+      onStopRecording: () => _audioHandler.stopRecording(),
+      onCancelRecording: () => _audioHandler.cancelRecording(),
       onRemovePendingImage: (index) {
         _imageHandler.removeAt(index);
+      },
+      onRemovePendingAudio: (index) {
+        _audioHandler.removeAt(index);
       },
       onContentInserted: _imageHandler.onContentInserted,
     );

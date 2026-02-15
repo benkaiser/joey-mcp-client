@@ -1,20 +1,28 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../models/pending_audio.dart';
 import '../models/pending_image.dart';
+import '../utils/audio_attachment_handler.dart';
 
 /// Result returned from the [EditMessageDialog].
 class EditMessageResult {
   final String text;
   final List<PendingImage> images;
+  final List<PendingAudio> audios;
 
-  EditMessageResult({required this.text, required this.images});
+  EditMessageResult({
+    required this.text,
+    required this.images,
+    required this.audios,
+  });
 }
 
 /// A dialog that lets the user edit a message's text and manage its attached
-/// images before re-sending.  Images decoded from the original message's
-/// [imageDataJson] are shown as thumbnails with remove buttons, exactly like
-/// the pending-image strip in [MessageInput].
+/// images and audio before re-sending.  Images decoded from the original
+/// message's [imageDataJson] are shown as thumbnails with remove buttons,
+/// exactly like the pending-image strip in [MessageInput].  Audio attachments
+/// are shown as removable chips.
 class EditMessageDialog extends StatefulWidget {
   /// The original message text.
   final String initialText;
@@ -22,10 +30,14 @@ class EditMessageDialog extends StatefulWidget {
   /// The original message's `imageData` JSON string (may be null).
   final String? imageDataJson;
 
+  /// The original message's `audioData` JSON string (may be null).
+  final String? audioDataJson;
+
   const EditMessageDialog({
     super.key,
     required this.initialText,
     this.imageDataJson,
+    this.audioDataJson,
   });
 
   @override
@@ -35,12 +47,14 @@ class EditMessageDialog extends StatefulWidget {
 class _EditMessageDialogState extends State<EditMessageDialog> {
   late final TextEditingController _controller;
   late final List<PendingImage> _images;
+  late final List<PendingAudio> _audios;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
     _images = _decodeImages(widget.imageDataJson);
+    _audios = _decodeAudios(widget.audioDataJson);
   }
 
   @override
@@ -67,16 +81,45 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
     }
   }
 
+  /// Decode the message's audioData JSON into a list of [PendingAudio]s.
+  static List<PendingAudio> _decodeAudios(String? audioDataJson) {
+    if (audioDataJson == null) return [];
+    try {
+      final list = jsonDecode(audioDataJson) as List;
+      return list.asMap().entries.map((entry) {
+        final audio = entry.value;
+        final data = audio['data'] as String;
+        final mimeType = audio['mimeType'] as String? ?? 'audio/mpeg';
+        return PendingAudio(
+          bytes: Uint8List.fromList(base64Decode(data)),
+          mimeType: mimeType,
+          fileName: 'Audio ${entry.key + 1}',
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   void _removeImage(int index) {
     setState(() {
       _images.removeAt(index);
     });
   }
 
+  void _removeAudio(int index) {
+    setState(() {
+      _audios.removeAt(index);
+    });
+  }
+
   void _submit() {
     final text = _controller.text.trim();
-    if (text.isEmpty && _images.isEmpty) return;
-    Navigator.pop(context, EditMessageResult(text: text, images: _images));
+    if (text.isEmpty && _images.isEmpty && _audios.isEmpty) return;
+    Navigator.pop(
+      context,
+      EditMessageResult(text: text, images: _images, audios: _audios),
+    );
   }
 
   @override
@@ -140,6 +183,42 @@ class _EditMessageDialogState extends State<EditMessageDialog> {
                             ),
                           ),
                         ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // --- Audio chips ---
+            if (_audios.isNotEmpty) ...[
+              SizedBox(
+                height: 44,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _audios.length,
+                  itemBuilder: (context, index) {
+                    final audio = _audios[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0, bottom: 4.0),
+                      child: Chip(
+                        avatar: Icon(
+                          Icons.audio_file,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        label: Text(
+                          audio.fileName ??
+                              (audio.duration != null
+                                  ? AudioAttachmentHandler.formatDuration(
+                                      audio.duration!)
+                                  : 'Audio'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () => _removeAudio(index),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
                       ),
                     );
                   },
