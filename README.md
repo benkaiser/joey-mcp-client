@@ -73,11 +73,9 @@ Looking for MCP servers to connect to? Check out:
 
 ## License
 
-This project uses a modified MIT License with a temporary non-compete clause:
+This project is licensed under the [Functional Source License, Version 1.1, MIT Future License (FSL-1.1-MIT)](https://fsl.software/FSL-1.1-MIT.template.md).
 
-- **Code less than 2 years old**: You may not use it to build competing apps on mobile app stores (Apple App Store, Google Play, etc.) without written permission
-- **Code 2+ years old**: Automatically reverts to standard MIT License with no restrictions
-
-This means an older clone of the repo (where all code is 2+ years old) can be freely distributed under MIT.
+- **Non-competing use is allowed** — you can use, copy, modify, and redistribute the Software for any purpose that isn't a Competing Use
+- **After 2 years**, each version automatically converts to the standard **MIT License** with no restrictions
 
 See [LICENSE](LICENSE) for full details.
