@@ -115,6 +115,17 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Add a message to in-memory state only (not persisted to DB).
+  /// Used for transient status indicators (connect/disconnect/OAuth required)
+  /// that should not survive app restarts.
+  void addTransientMessage(Message message) {
+    if (!_messages.containsKey(message.conversationId)) {
+      _messages[message.conversationId] = [];
+    }
+    _messages[message.conversationId]!.add(message);
+    notifyListeners();
+  }
+
   Future<void> updateMessageContent(String messageId, String newContent) async {
     // Find the message and update its content
     for (final messages in _messages.values) {

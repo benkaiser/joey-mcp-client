@@ -2,23 +2,122 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/mcp_server.dart';
 import '../services/mcp_client_service.dart';
+import '../services/mcp_server_manager.dart';
+import '../services/mcp_oauth_manager.dart';
 
 /// Screen showing detailed debug information about connected MCP servers
 /// and their tools with expandable parameter details.
-class McpDebugScreen extends StatelessWidget {
-  final List<McpServer> servers;
-  final Map<String, McpClientService> clients;
-  final Map<String, List<McpTool>> tools;
+///
+/// Directly references the live [McpServerManager] and [McpOAuthManager]
+/// so it always reflects the current state — including changes triggered
+/// externally (e.g. OAuth deep-link callbacks).
+class McpDebugScreen extends StatefulWidget {
+  final McpServerManager serverManager;
+  final McpOAuthManager oauthManager;
+  final String conversationId;
 
   const McpDebugScreen({
     super.key,
-    required this.servers,
-    required this.clients,
-    required this.tools,
+    required this.serverManager,
+    required this.oauthManager,
+    required this.conversationId,
   });
 
   @override
+  State<McpDebugScreen> createState() => _McpDebugScreenState();
+}
+
+class _McpDebugScreenState extends State<McpDebugScreen> {
+  final Map<String, String> _serverActionInProgress = {};
+
+  McpServerManager get _sm => widget.serverManager;
+  McpOAuthManager get _om => widget.oauthManager;
+
+  @override
+  void initState() {
+    super.initState();
+    _sm.addListener(_rebuild);
+    _om.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    _sm.removeListener(_rebuild);
+    _om.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  // --------------- Actions ---------------
+
+  Future<void> _runAction(
+    McpServer server,
+    String actionType,
+    Future<void> Function() action,
+  ) async {
+    setState(() => _serverActionInProgress[server.id] = actionType);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _serverActionInProgress.remove(server.id));
+      }
+    }
+  }
+
+  Future<void> _connectServer(McpServer server) =>
+      _runAction(server, 'connecting', () async {
+        await _sm.initializeMcpServer(server);
+      });
+
+  Future<void> _disconnectServer(McpServer server) =>
+      _runAction(server, 'disconnecting', () async {
+        await _sm.disconnectServer(server.id, widget.conversationId);
+      });
+
+  Future<void> _oauthLogout(McpServer server) =>
+      _runAction(server, 'logging_out', () async {
+        // Disconnect if connected
+        await _sm.disconnectServer(server.id, widget.conversationId);
+
+        // Clear OAuth tokens and status
+        await _om.oauthLogout(server);
+
+        // Update in-memory server
+        final updatedServer = server.copyWith(
+          oauthStatus: McpOAuthStatus.none,
+          clearOAuthTokens: true,
+          updatedAt: DateTime.now(),
+        );
+        _sm.updateServer(updatedServer);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Logged out of ${server.name}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      });
+
+  Future<void> _oauthLogin(McpServer server) =>
+      _runAction(server, 'oauth_login', () async {
+        if (!_om.serversNeedingOAuth.any((s) => s.id == server.id)) {
+          _om.handleServerNeedsOAuth(server, _sm.mcpServers);
+        }
+        await _om.startServerOAuth(server);
+      });
+
+  // --------------- Build ---------------
+
+  @override
   Widget build(BuildContext context) {
+    final servers = _sm.mcpServers;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('MCP Debug'),
@@ -26,7 +125,7 @@ class McpDebugScreen extends StatelessWidget {
       body: servers.isEmpty
           ? Center(
               child: Text(
-                'No MCP servers connected',
+                'No MCP servers configured',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -37,10 +136,17 @@ class McpDebugScreen extends StatelessWidget {
               itemCount: servers.length,
               itemBuilder: (context, index) {
                 final server = servers[index];
+                final actionInProgress = _serverActionInProgress[server.id];
                 return _ServerSection(
                   server: server,
-                  client: clients[server.id],
-                  tools: tools[server.id] ?? [],
+                  isConnected: _sm.mcpClients.containsKey(server.id),
+                  sessionId: _sm.mcpClients[server.id]?.sessionId,
+                  tools: _sm.mcpTools[server.id] ?? [],
+                  actionInProgress: actionInProgress,
+                  onConnect: () => _connectServer(server),
+                  onDisconnect: () => _disconnectServer(server),
+                  onOAuthLogout: () => _oauthLogout(server),
+                  onOAuthLogin: () => _oauthLogin(server),
                 );
               },
             ),
@@ -48,22 +154,79 @@ class McpDebugScreen extends StatelessWidget {
   }
 }
 
-class _ServerSection extends StatelessWidget {
+class _ServerSection extends StatefulWidget {
   final McpServer server;
-  final McpClientService? client;
+  final bool isConnected;
+  final String? sessionId;
   final List<McpTool> tools;
+  /// null = no action, "connecting" / "disconnecting" / "logging_out" / "oauth_login"
+  final String? actionInProgress;
+  final VoidCallback onConnect;
+  final VoidCallback onDisconnect;
+  final VoidCallback onOAuthLogout;
+  final VoidCallback onOAuthLogin;
 
   const _ServerSection({
     required this.server,
-    required this.client,
+    required this.isConnected,
+    required this.sessionId,
     required this.tools,
+    required this.actionInProgress,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onOAuthLogout,
+    required this.onOAuthLogin,
   });
+
+  @override
+  State<_ServerSection> createState() => _ServerSectionState();
+}
+
+class _ServerSectionState extends State<_ServerSection> {
+  bool _toolsExpanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isConnected = client != null;
-    final sessionId = client?.sessionId;
+    final isActionRunning = widget.actionInProgress != null;
+
+    // Determine the display status
+    String statusText;
+    Color statusColor;
+    IconData headerIcon;
+    Color headerIconColor;
+
+    if (widget.actionInProgress == 'connecting') {
+      statusText = 'Connecting...';
+      statusColor = Colors.orange;
+      headerIcon = Icons.hourglass_top;
+      headerIconColor = Colors.orange;
+    } else if (widget.actionInProgress == 'disconnecting') {
+      statusText = 'Disconnecting...';
+      statusColor = Colors.orange;
+      headerIcon = Icons.hourglass_top;
+      headerIconColor = Colors.orange;
+    } else if (widget.actionInProgress == 'logging_out') {
+      statusText = 'Logging out...';
+      statusColor = Colors.orange;
+      headerIcon = Icons.hourglass_top;
+      headerIconColor = Colors.orange;
+    } else if (widget.actionInProgress == 'oauth_login') {
+      statusText = 'Signing in...';
+      statusColor = Colors.orange;
+      headerIcon = Icons.hourglass_top;
+      headerIconColor = Colors.orange;
+    } else if (widget.isConnected) {
+      statusText = 'Connected';
+      statusColor = Colors.green;
+      headerIcon = Icons.check_circle;
+      headerIconColor = Colors.green;
+    } else {
+      statusText = 'Disconnected';
+      statusColor = Colors.red;
+      headerIcon = Icons.error;
+      headerIconColor = Colors.red;
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -75,15 +238,25 @@ class _ServerSection extends StatelessWidget {
             // Server header
             Row(
               children: [
-                Icon(
-                  isConnected ? Icons.check_circle : Icons.error,
-                  color: isConnected ? Colors.green : Colors.red,
-                  size: 20,
-                ),
+                if (isActionRunning)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: headerIconColor,
+                    ),
+                  )
+                else
+                  Icon(
+                    headerIcon,
+                    color: headerIconColor,
+                    size: 20,
+                  ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    server.name,
+                    widget.server.name,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -94,45 +267,136 @@ class _ServerSection extends StatelessWidget {
             const SizedBox(height: 12),
 
             // Server details table
-            _DetailRow(label: 'URL', value: server.url),
+            _DetailRow(label: 'URL', value: widget.server.url),
             _DetailRow(
               label: 'Status',
-              value: isConnected ? 'Connected' : 'Disconnected',
-              valueColor: isConnected ? Colors.green : Colors.red,
+              value: statusText,
+              valueColor: statusColor,
             ),
-            if (sessionId != null)
-              _DetailRow(label: 'Session ID', value: sessionId, mono: true),
-            _DetailRow(label: 'OAuth', value: server.oauthStatus.name),
-            if (server.headers != null && server.headers!.isNotEmpty)
+            if (widget.sessionId != null)
+              _DetailRow(label: 'Session ID', value: widget.sessionId!, mono: true),
+            _DetailRow(label: 'OAuth', value: widget.server.oauthStatus.name),
+            if (widget.server.headers != null && widget.server.headers!.isNotEmpty)
               _DetailRow(
                 label: 'Headers',
-                value: '${server.headers!.length} configured',
+                value: '${widget.server.headers!.length} configured',
               ),
+
+            // Action buttons
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (!isActionRunning && widget.isConnected)
+                  _ActionButton(
+                    icon: Icons.link_off,
+                    label: 'Disconnect',
+                    color: Colors.orange,
+                    onPressed: widget.onDisconnect,
+                  ),
+                if (!isActionRunning && !widget.isConnected)
+                  _ActionButton(
+                    icon: Icons.link,
+                    label: 'Connect',
+                    color: Colors.green,
+                    onPressed: widget.onConnect,
+                  ),
+                if (!isActionRunning && widget.server.oauthStatus == McpOAuthStatus.authenticated)
+                  _ActionButton(
+                    icon: Icons.logout,
+                    label: 'OAuth Logout',
+                    color: Colors.red,
+                    onPressed: widget.onOAuthLogout,
+                  ),
+                if (!isActionRunning && widget.server.needsOAuth)
+                  _ActionButton(
+                    icon: Icons.login,
+                    label: 'OAuth Login',
+                    color: Theme.of(context).colorScheme.primary,
+                    onPressed: widget.onOAuthLogin,
+                  ),
+              ],
+            ),
 
             const SizedBox(height: 16),
 
-            // Tools section
-            Text(
-              'Tools (${tools.length})',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+            // Collapsible tools section
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => setState(() => _toolsExpanded = !_toolsExpanded),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                children: [
+                  Text(
+                    'Tools (${widget.tools.length})',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _toolsExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+                ),
               ),
             ),
-            const SizedBox(height: 8),
 
-            if (tools.isEmpty)
-              Text(
-                'No tools available',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            if (_toolsExpanded) ...[
+              const SizedBox(height: 8),
+              if (widget.tools.isEmpty)
+                Text(
+                  'No tools available',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                ...widget.tools.map(
+                  (tool) => _ToolTile(tool: tool),
                 ),
-              )
-            else
-              ...tools.map(
-                (tool) => _ToolTile(tool: tool),
-              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16, color: color),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 13,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color.withValues(alpha: 0.5)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: const Size(0, 36),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }

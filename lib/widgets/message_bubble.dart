@@ -407,8 +407,20 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// Build a system message indicator (e.g. model change)
+  /// Build a system message indicator (e.g. model change, server connected/disconnected)
   Widget _buildSystemMessage(BuildContext context) {
+    // Pick icon based on content
+    final IconData icon;
+    if (message.content.startsWith('Connected to')) {
+      icon = Icons.check_circle_outline;
+    } else if (message.content.startsWith('Disconnected from')) {
+      icon = Icons.link_off;
+    } else if (message.content.startsWith('OAuth required')) {
+      icon = Icons.lock_outline;
+    } else {
+      icon = Icons.swap_horiz;
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       child: Row(
@@ -418,31 +430,26 @@ class MessageBubble extends StatelessWidget {
               color: Theme.of(context).colorScheme.outlineVariant,
             ),
           ),
-          Flexible(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.swap_horiz,
-                    size: 14,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  message.content,
+                  style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
                   ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      message.content,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           Expanded(

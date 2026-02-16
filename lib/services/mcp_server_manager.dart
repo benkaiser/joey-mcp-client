@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/mcp_server.dart';
+import '../widgets/mcp_oauth_card.dart';
 import 'database_service.dart';
 import 'mcp_client_service.dart';
 import 'mcp_oauth_service.dart';
@@ -7,7 +8,7 @@ import 'mcp_oauth_manager.dart';
 
 /// Delegate class that manages MCP server lifecycle:
 /// loading, initializing, refreshing tools, and updating servers.
-class McpServerManager {
+class McpServerManager extends ChangeNotifier {
   List<McpServer> mcpServers = [];
   final Map<String, McpClientService> mcpClients = {};
   final Map<String, List<McpTool>> mcpTools = {};
@@ -18,11 +19,14 @@ class McpServerManager {
   /// The conversation ID this manager is associated with.
   String? conversationId;
 
-  /// Callback invoked when internal state changes (re-render needed).
-  VoidCallback? onStateChanged;
-
   /// Callback invoked when a server needs OAuth authentication.
   void Function(McpServer server)? onServerNeedsOAuth;
+
+  /// Callback invoked when a server is disconnected.
+  void Function(String serverName)? onServerDisconnected;
+
+  /// Callback invoked when a server successfully connects.
+  void Function(String serverName)? onServerConnected;
 
   /// Load MCP servers for the given conversation from the database.
   Future<void> loadMcpServers(String conversationId) async {
@@ -32,7 +36,7 @@ class McpServerManager {
         conversationId,
       );
       mcpServers = servers;
-      onStateChanged?.call();
+      notifyListeners();
 
       // Initialize MCP clients for each server
       for (final server in servers) {
@@ -141,10 +145,15 @@ class McpServerManager {
             final index = mcpServers.indexWhere((s) => s.id == server.id);
             if (index >= 0) {
               mcpServers[index] = updatedServer;
-              oauthManager?.serverOAuthStatus.remove(server.id);
-              onStateChanged?.call();
+              // Only remove OAuth status if it wasn't already completed
+              // (completed status is used by the banner to auto-hide the server)
+              if (oauthManager?.serverOAuthStatus[server.id] != McpOAuthCardStatus.completed) {
+                oauthManager?.serverOAuthStatus.remove(server.id);
+              }
+              notifyListeners();
             }
           }
+          onServerConnected?.call(server.name);
           return; // Skip the rest of setup since we've handled it
         }
         rethrow;
@@ -152,6 +161,8 @@ class McpServerManager {
 
       mcpClients[server.id] = client;
       mcpTools[server.id] = tools;
+      notifyListeners();
+      onServerConnected?.call(server.name);
 
       // Persist the session ID (may be new or same as stored)
       final newSessionId = client.sessionId;
@@ -177,8 +188,12 @@ class McpServerManager {
         final index = mcpServers.indexWhere((s) => s.id == server.id);
         if (index >= 0) {
           mcpServers[index] = updatedServer;
-          oauthManager?.serverOAuthStatus.remove(server.id);
-          onStateChanged?.call();
+          // Only remove OAuth status if it wasn't already completed
+          // (completed status is used by the banner to auto-hide the server)
+          if (oauthManager?.serverOAuthStatus[server.id] != McpOAuthCardStatus.completed) {
+            oauthManager?.serverOAuthStatus.remove(server.id);
+          }
+          notifyListeners();
         }
       }
     } on McpAuthRequiredException catch (e) {
@@ -204,7 +219,7 @@ class McpServerManager {
     try {
       final tools = await client.listTools();
       mcpTools[serverId] = tools;
-      onStateChanged?.call();
+      notifyListeners();
       print('Refreshed tools for server $serverId: ${tools.length} tools');
     } catch (e) {
       print('Failed to refresh tools for server $serverId: $e');
@@ -220,12 +235,53 @@ class McpServerManager {
     return names;
   }
 
-  /// Close all MCP clients
-  Future<void> dispose() async {
+  /// Disconnect a specific server: close client, clear tools/session, notify.
+  Future<void> disconnectServer(String serverId, String conversationId) async {
+    // Look up server name before removing
+    final serverName = mcpServers.where((s) => s.id == serverId).map((s) => s.name).firstOrNull;
+
+    final client = mcpClients.remove(serverId);
+    mcpTools.remove(serverId);
+    await client?.close();
+    await DatabaseService.instance.updateMcpSessionId(
+      conversationId,
+      serverId,
+      null,
+    );
+    notifyListeners();
+
+    if (serverName != null) {
+      onServerDisconnected?.call(serverName);
+    }
+  }
+
+  /// Replace the server list and notify listeners.
+  void updateServerList(List<McpServer> servers) {
+    mcpServers = servers;
+    notifyListeners();
+  }
+
+  /// Update a single server in the list and notify listeners.
+  void updateServer(McpServer server) {
+    final index = mcpServers.indexWhere((s) => s.id == server.id);
+    if (index >= 0) {
+      mcpServers[index] = server;
+      notifyListeners();
+    }
+  }
+
+  /// Close all MCP clients and release resources.
+  Future<void> close() async {
     for (final client in mcpClients.values) {
       await client.close();
     }
     mcpClients.clear();
     mcpTools.clear();
+  }
+
+  @override
+  void dispose() {
+    close();
+    super.dispose();
   }
 }

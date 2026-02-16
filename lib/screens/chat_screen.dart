@@ -142,7 +142,7 @@ class _ChatScreenState extends State<ChatScreen>
     _audioHandler.onStateChanged = () => setState(() {});
 
     // Wire up OAuth manager
-    _oauthManager.onStateChanged = () => setState(() {});
+    _oauthManager.addListener(_onMcpStateChanged);
     _oauthManager.onReinitializeServer = (server) async {
       // Close existing client and clear session before re-init
       if (_serverManager.mcpClients.containsKey(server.id)) {
@@ -164,15 +164,58 @@ class _ChatScreenState extends State<ChatScreen>
         );
       }
     };
+    _oauthManager.onServerOAuthRequired = (serverName) {
+      if (mounted) {
+        final provider = context.read<ConversationProvider>();
+        final oauthMessage = Message(
+          id: const Uuid().v4(),
+          conversationId: widget.conversation.id,
+          role: MessageRole.modelChange,
+          content: 'OAuth required for $serverName',
+          timestamp: DateTime.now(),
+        );
+        provider.addTransientMessage(oauthMessage);
+      }
+    };
     _oauthManager.initDeepLinkListener();
 
     // Wire up server manager
     _serverManager.oauthManager = _oauthManager;
-    _serverManager.onStateChanged = () => setState(() {});
+    _serverManager.addListener(_onMcpStateChanged);
     _serverManager.onServerNeedsOAuth = (server) {
       _oauthManager.handleServerNeedsOAuth(server, _serverManager.mcpServers);
     };
+    _serverManager.onServerDisconnected = (serverName) {
+      if (mounted) {
+        final provider = context.read<ConversationProvider>();
+        final disconnectedMessage = Message(
+          id: const Uuid().v4(),
+          conversationId: widget.conversation.id,
+          role: MessageRole.modelChange,
+          content: 'Disconnected from $serverName',
+          timestamp: DateTime.now(),
+        );
+        provider.addTransientMessage(disconnectedMessage);
+      }
+    };
+    _serverManager.onServerConnected = (serverName) {
+      if (mounted) {
+        final provider = context.read<ConversationProvider>();
+        final connectedMessage = Message(
+          id: const Uuid().v4(),
+          conversationId: widget.conversation.id,
+          role: MessageRole.modelChange,
+          content: 'Connected to $serverName',
+          timestamp: DateTime.now(),
+        );
+        provider.addTransientMessage(connectedMessage);
+      }
+    };
     _serverManager.loadMcpServers(widget.conversation.id);
+  }
+
+  void _onMcpStateChanged() {
+    if (mounted) setState(() {});
   }
 
   /// Handle key events for the message input.
@@ -237,6 +280,8 @@ class _ChatScreenState extends State<ChatScreen>
     _focusNode.dispose();
     _chatService?.dispose();
     _audioHandler.dispose();
+    _oauthManager.removeListener(_onMcpStateChanged);
+    _serverManager.removeListener(_onMcpStateChanged);
     _oauthManager.dispose();
     _serverManager.dispose();
     super.dispose();
@@ -836,15 +881,15 @@ class _ChatScreenState extends State<ChatScreen>
           body: Column(
             children: [
               // Show OAuth banner if servers need authentication
-              if (_oauthManager.serversNeedingOAuth.isNotEmpty)
+              if (_oauthManager.serversNeedingOAuth.any((s) =>
+                  _oauthManager.serverOAuthStatus[s.id] != McpOAuthCardStatus.completed))
                 McpOAuthBanner(
                   serversNeedingAuth: _oauthManager.serversNeedingOAuth,
-                  onAuthenticateAll: _oauthManager.startAllServersOAuth,
+                  serverOAuthStatus: _oauthManager.serverOAuthStatus,
+                  onAuthenticate: (server) => _oauthManager.startServerOAuth(server),
+                  onSkip: (server) => _oauthManager.skipServerOAuth(server),
                   onDismiss: () {
-                    setState(() {
-                      _oauthManager.serversNeedingOAuth.clear();
-                      _oauthManager.serverOAuthStatus.clear();
-                    });
+                    _oauthManager.dismissAll();
                   },
                 ),
               Expanded(
@@ -883,6 +928,7 @@ class _ChatScreenState extends State<ChatScreen>
   Widget _buildCommandPalette() {
     return CommandPalette(
       mcpServers: _serverManager.mcpServers,
+      connectedServerIds: _serverManager.mcpClients.keys.toSet(),
       onOpenPrompts: _openMcpPromptsScreen,
       onOpenServers: _showMcpServerSelector,
       onOpenDebug: _openMcpDebugScreen,
@@ -914,16 +960,8 @@ class _ChatScreenState extends State<ChatScreen>
 
     // Close removed server clients
     for (final id in removedIds) {
-      final client = _serverManager.mcpClients.remove(id);
-      _serverManager.mcpTools.remove(id);
       _oauthManager.removeServer(id);
-      await client?.close();
-      // Clear stored session ID
-      await DatabaseService.instance.updateMcpSessionId(
-        widget.conversation.id,
-        id,
-        null,
-      );
+      await _serverManager.disconnectServer(id, widget.conversation.id);
     }
 
     // Save the new association to the database
@@ -938,9 +976,7 @@ class _ChatScreenState extends State<ChatScreen>
         .where((s) => newIds.contains(s.id))
         .toList();
 
-    setState(() {
-      _serverManager.mcpServers = newMcpServers;
-    });
+    _serverManager.updateServerList(newMcpServers);
 
     // Initialize newly added servers
     for (final id in addedIds) {
@@ -998,9 +1034,9 @@ class _ChatScreenState extends State<ChatScreen>
       context,
       MaterialPageRoute(
         builder: (context) => McpDebugScreen(
-          servers: _serverManager.mcpServers,
-          clients: _serverManager.mcpClients,
-          tools: _serverManager.mcpTools,
+          serverManager: _serverManager,
+          oauthManager: _oauthManager,
+          conversationId: widget.conversation.id,
         ),
       ),
     );
