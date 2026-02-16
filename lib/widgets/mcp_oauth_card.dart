@@ -250,16 +250,24 @@ class McpOAuthCard extends StatelessWidget {
   }
 }
 
-/// Card shown at the top of chat when multiple servers need OAuth
+/// Banner shown at the top of chat when servers need OAuth.
+///
+/// Shows per-server rows with individual sign-in buttons.
+/// Automatically hides servers that have completed authentication,
+/// and returns [SizedBox.shrink] when all servers are connected.
 class McpOAuthBanner extends StatelessWidget {
   final List<McpServer> serversNeedingAuth;
-  final VoidCallback onAuthenticateAll;
+  final Map<String, McpOAuthCardStatus> serverOAuthStatus;
+  final void Function(McpServer server) onAuthenticate;
+  final void Function(McpServer server) onSkip;
   final VoidCallback? onDismiss;
 
   const McpOAuthBanner({
     super.key,
     required this.serversNeedingAuth,
-    required this.onAuthenticateAll,
+    required this.serverOAuthStatus,
+    required this.onAuthenticate,
+    required this.onSkip,
     this.onDismiss,
   });
 
@@ -268,11 +276,15 @@ class McpOAuthBanner extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    if (serversNeedingAuth.isEmpty) {
+    // Filter out completed servers
+    final pendingServers = serversNeedingAuth.where((s) {
+      final status = serverOAuthStatus[s.id];
+      return status != McpOAuthCardStatus.completed;
+    }).toList();
+
+    if (pendingServers.isEmpty) {
       return const SizedBox.shrink();
     }
-
-    final serverNames = serversNeedingAuth.map((s) => s.name).join(', ');
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -282,11 +294,12 @@ class McpOAuthBanner extends StatelessWidget {
         border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Header
             Row(
               children: [
                 Icon(
@@ -318,28 +331,165 @@ class McpOAuthBanner extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              '${serversNeedingAuth.length} server${serversNeedingAuth.length > 1 ? 's' : ''} require${serversNeedingAuth.length == 1 ? 's' : ''} authentication: $serverNames',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onAuthenticateAll,
-                icon: const Icon(Icons.login, size: 18),
-                label: Text(
-                  serversNeedingAuth.length == 1
-                      ? 'Sign In'
-                      : 'Sign In to All',
-                ),
-              ),
-            ),
+            // Per-server rows
+            ...pendingServers.map((server) {
+              final status = serverOAuthStatus[server.id] ?? McpOAuthCardStatus.pending;
+              return _buildServerRow(context, server, status, colorScheme, theme);
+            }),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildServerRow(
+    BuildContext context,
+    McpServer server,
+    McpOAuthCardStatus status,
+    ColorScheme colorScheme,
+    ThemeData theme,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          // Status indicator
+          _buildStatusIndicator(status, colorScheme),
+          const SizedBox(width: 8),
+          // Server name
+          Expanded(
+            child: Text(
+              server.name,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onPrimaryContainer,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Action button
+          _buildActionButton(server, status, colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusIndicator(McpOAuthCardStatus status, ColorScheme colorScheme) {
+    switch (status) {
+      case McpOAuthCardStatus.pending:
+        return Icon(
+          Icons.lock_outline,
+          size: 16,
+          color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+        );
+      case McpOAuthCardStatus.inProgress:
+        return SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.orange.shade600,
+          ),
+        );
+      case McpOAuthCardStatus.completed:
+        return Icon(
+          Icons.check_circle_outline,
+          size: 16,
+          color: Colors.green.shade600,
+        );
+      case McpOAuthCardStatus.failed:
+        return Icon(
+          Icons.error_outline,
+          size: 16,
+          color: Colors.red.shade600,
+        );
+    }
+  }
+
+  Widget _buildActionButton(McpServer server, McpOAuthCardStatus status, ColorScheme colorScheme) {
+    switch (status) {
+      case McpOAuthCardStatus.pending:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: () => onSkip(server),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                'Skip',
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: () => onAuthenticate(server),
+              icon: const Icon(Icons.login, size: 16),
+              label: const Text('Sign In', style: TextStyle(fontSize: 13)),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        );
+      case McpOAuthCardStatus.inProgress:
+        return Text(
+          'Waiting...',
+          style: TextStyle(
+            color: Colors.orange.shade600,
+            fontSize: 13,
+            fontStyle: FontStyle.italic,
+          ),
+        );
+      case McpOAuthCardStatus.completed:
+        return Text(
+          'Connected',
+          style: TextStyle(
+            color: Colors.green.shade600,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        );
+      case McpOAuthCardStatus.failed:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: () => onSkip(server),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                'Skip',
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: () => onAuthenticate(server),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry', style: TextStyle(fontSize: 13)),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        );
+    }
   }
 }

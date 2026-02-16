@@ -9,11 +9,12 @@ import 'mcp_oauth_service.dart';
 
 /// Delegate class that manages MCP OAuth authentication flows.
 ///
-/// Communicates back to the host via callbacks:
-/// - [onStateChanged] — called when internal state changes (e.g. OAuth status)
+/// Extends [ChangeNotifier] for multi-listener state change support.
+/// Also communicates back to the host via single-slot action callbacks:
 /// - [onReinitializeServer] — called when a server should be re-initialized after OAuth
 /// - [onShowMessage] — called when a message should be shown to the user
-class McpOAuthManager {
+/// - [onServerOAuthRequired] — called when a server needs OAuth authentication
+class McpOAuthManager extends ChangeNotifier {
   final McpOAuthService _mcpOAuthService = McpOAuthService();
   final AppLinks _appLinks = AppLinks();
   StreamSubscription? _deepLinkSubscription;
@@ -27,14 +28,14 @@ class McpOAuthManager {
   /// Track OAuth status for each server
   final Map<String, McpOAuthCardStatus> serverOAuthStatus = {};
 
-  /// Callback invoked when internal state changes (re-render needed).
-  VoidCallback? onStateChanged;
-
   /// Callback to re-initialize a server after successful OAuth.
   Future<void> Function(McpServer server)? onReinitializeServer;
 
   /// Callback to show a message to the user (text, color).
   void Function(String message, Color color)? onShowMessage;
+
+  /// Callback invoked when a server requires OAuth authentication.
+  void Function(String serverName)? onServerOAuthRequired;
 
   /// Access the underlying OAuth service.
   McpOAuthService get oauthService => _mcpOAuthService;
@@ -139,16 +140,21 @@ class McpOAuthManager {
   void handleServerNeedsOAuth(McpServer server, List<McpServer> mcpServers) {
     final index = mcpServers.indexWhere((s) => s.id == server.id);
     if (index >= 0 && !serversNeedingOAuth.any((s) => s.id == server.id)) {
-      serversNeedingOAuth.add(mcpServers[index]);
-      serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
-      onStateChanged?.call();
-
-      // Update server in database
-      final updatedServer = server.copyWith(
+      // Update in-memory server with required status
+      final updatedServer = mcpServers[index].copyWith(
         oauthStatus: McpOAuthStatus.required,
         updatedAt: DateTime.now(),
       );
+      mcpServers[index] = updatedServer;
+
+      serversNeedingOAuth.add(updatedServer);
+      serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
+      notifyListeners();
+
+      // Persist to database
       DatabaseService.instance.updateMcpServer(updatedServer);
+
+      onServerOAuthRequired?.call(server.name);
     }
   }
 
@@ -167,7 +173,7 @@ class McpOAuthManager {
       for (final entry in serverOAuthStatus.entries) {
         if (entry.value == McpOAuthCardStatus.inProgress) {
           serverOAuthStatus[entry.key] = McpOAuthCardStatus.failed;
-          onStateChanged?.call();
+          notifyListeners();
           break;
         }
       }
@@ -230,7 +236,7 @@ class McpOAuthManager {
       for (final entry in serverOAuthStatus.entries) {
         if (entry.value == McpOAuthCardStatus.inProgress) {
           serverOAuthStatus[entry.key] = McpOAuthCardStatus.failed;
-          onStateChanged?.call();
+          notifyListeners();
           break;
         }
       }
@@ -272,15 +278,12 @@ class McpOAuthManager {
     final index = mcpServers.indexWhere((s) => s.id == server.id);
     if (index >= 0) {
       mcpServers[index] = updatedServer;
-      serverOAuthStatus[server.id] = McpOAuthCardStatus.completed;
-      serversNeedingOAuth.removeWhere((s) => s.id == server.id);
-      onStateChanged?.call();
     }
+    serverOAuthStatus[server.id] = McpOAuthCardStatus.completed;
+    notifyListeners();
 
     // Re-initialize the server with the new tokens
     await onReinitializeServer?.call(updatedServer);
-
-    onShowMessage?.call('Connected to ${server.name}', Colors.green);
   }
 
   /// Start OAuth flow for a specific server
@@ -292,7 +295,7 @@ class McpOAuthManager {
       }
 
       serverOAuthStatus[server.id] = McpOAuthCardStatus.inProgress;
-      onStateChanged?.call();
+      notifyListeners();
 
       // Build and launch auth URL
       final authUrl = await _mcpOAuthService.buildAuthorizationUrl(
@@ -310,7 +313,7 @@ class McpOAuthManager {
     } catch (e) {
       debugPrint('Failed to start OAuth for ${server.name}: $e');
       serverOAuthStatus[server.id] = McpOAuthCardStatus.failed;
-      onStateChanged?.call();
+      notifyListeners();
 
       onShowMessage?.call(
         'Failed to start sign in: ${e.toString()}',
@@ -323,7 +326,7 @@ class McpOAuthManager {
   void skipServerOAuth(McpServer server) {
     serversNeedingOAuth.removeWhere((s) => s.id == server.id);
     serverOAuthStatus.remove(server.id);
-    onStateChanged?.call();
+    notifyListeners();
   }
 
   /// Start OAuth for all servers that need it
@@ -344,8 +347,37 @@ class McpOAuthManager {
     serversNeedingOAuth.removeWhere((s) => s.id == serverId);
   }
 
-  /// Dispose of resources
-  void dispose() {
+  /// Perform OAuth logout for a server: clear providers, status, tokens, persist, notify.
+  Future<void> oauthLogout(McpServer server) async {
+    oauthProviders.remove(server.id);
+    serverOAuthStatus.remove(server.id);
+    serversNeedingOAuth.removeWhere((s) => s.id == server.id);
+
+    final updatedServer = server.copyWith(
+      oauthStatus: McpOAuthStatus.none,
+      clearOAuthTokens: true,
+      updatedAt: DateTime.now(),
+    );
+    await DatabaseService.instance.updateMcpServer(updatedServer);
+    notifyListeners();
+  }
+
+  /// Dismiss all OAuth banners: clear pending servers and status, notify.
+  void dismissAll() {
+    serversNeedingOAuth.clear();
+    serverOAuthStatus.clear();
+    notifyListeners();
+  }
+
+  /// Cancel the deep-link subscription.
+  void close() {
     _deepLinkSubscription?.cancel();
+  }
+
+  /// Dispose of resources
+  @override
+  void dispose() {
+    close();
+    super.dispose();
   }
 }
