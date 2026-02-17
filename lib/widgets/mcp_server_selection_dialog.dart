@@ -22,10 +22,15 @@ class McpServerSelectionDialog extends StatefulWidget {
   /// The model that will be used for this conversation.
   final String? selectedModel;
 
+  /// When true, the dialog is editing MCP servers for an existing conversation
+  /// rather than creating a new one.
+  final bool isEditing;
+
   const McpServerSelectionDialog({
     super.key,
     this.initialSelectedServerIds,
     this.selectedModel,
+    this.isEditing = false,
   });
 
   @override
@@ -91,7 +96,7 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New Conversation'),
+      title: Text(widget.isEditing ? 'MCP Servers' : 'New Conversation'),
       content: _isLoading
           ? const Center(
               child: Padding(
@@ -202,7 +207,7 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
               Navigator.pop(context, _selectedServerIds.toList());
             }
           },
-          child: const Text('Start Chat'),
+          child: Text(widget.isEditing ? 'Update' : 'Start Chat'),
         ),
       ],
     );

@@ -941,7 +941,7 @@ class _ChatScreenState extends State<ChatScreen>
     final selectedServerIds = await showDialog<List<String>>(
       context: context,
       builder: (context) =>
-          McpServerSelectionDialog(initialSelectedServerIds: currentServerIds),
+          McpServerSelectionDialog(initialSelectedServerIds: currentServerIds, isEditing: true),
     );
 
     // User cancelled
