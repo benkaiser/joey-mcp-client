@@ -62,6 +62,12 @@ class ErrorOccurred extends ChatEvent {
 /// Event emitted when authentication with OpenRouter is required
 class AuthenticationRequired extends ChatEvent {}
 
+/// Event emitted when usage/cost data is received from OpenRouter
+class UsageReceived extends ChatEvent {
+  final Map<String, dynamic> usage;
+  UsageReceived({required this.usage});
+}
+
 /// Event emitted when a sampling request is received from an MCP server
 class SamplingRequestReceived extends ChatEvent {
   final Map<String, dynamic> request;

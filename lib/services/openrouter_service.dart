@@ -285,6 +285,8 @@ class OpenRouterService {
         final stream = response.data!.stream;
         String buffer = '';
         List<Map<String, dynamic>> accumulatedToolCalls = [];
+        Map<String, dynamic>? lastUsage;
+        bool contentFinished = false;
 
         await for (final chunk in stream) {
           final text = utf8.decode(chunk);
@@ -309,7 +311,11 @@ class OpenRouterService {
               // Emit accumulated tool calls if any
               if (accumulatedToolCalls.isNotEmpty) {
                 yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
-                accumulatedToolCalls = []; // Clear to prevent double-emit
+                accumulatedToolCalls = [];
+              }
+              // Emit usage data if captured
+              if (lastUsage != null) {
+                yield 'USAGE:${jsonEncode(lastUsage)}';
               }
               return; // Stream is done, exit the generator
             }
@@ -322,6 +328,19 @@ class OpenRouterService {
               if (error != null) {
                 throw Exception('Provider error: ${jsonEncode(error)}');
               }
+
+              // Capture usage data from any chunk.
+              // OpenRouter sends usage in a separate final chunk with empty
+              // choices[], right before [DONE]. We must not exit early on
+              // finishReason so we can still receive this chunk.
+              final usage = json['usage'] as Map<String, dynamic>?;
+              if (usage != null) {
+                lastUsage = usage;
+              }
+
+              // If content is already finished, skip choices processing
+              // (we're just waiting for usage / [DONE])
+              if (contentFinished) continue;
 
               final choices = json['choices'] as List<dynamic>?;
               if (choices != null && choices.isNotEmpty) {
@@ -407,14 +426,12 @@ class OpenRouterService {
                   yield content;
                 }
 
-                // Check if stream is finished - do this AFTER processing the final chunk's content
+                // When finishReason is set, content streaming is done but
+                // we must NOT return yet — the usage chunk with empty choices
+                // arrives after this. Mark content as finished and continue
+                // the loop to capture usage before [DONE].
                 if (finishReason != null) {
-                  // Emit accumulated tool calls if any
-                  if (accumulatedToolCalls.isNotEmpty) {
-                    yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
-                    accumulatedToolCalls = []; // Clear to prevent double-emit
-                  }
-                  return; // Exit the stream generator
+                  contentFinished = true;
                 }
               }
             } catch (e) {
@@ -424,6 +441,14 @@ class OpenRouterService {
               continue;
             }
           }
+        }
+
+        // Stream ended without [DONE] — emit anything still pending
+        if (accumulatedToolCalls.isNotEmpty) {
+          yield 'TOOL_CALLS:${jsonEncode(accumulatedToolCalls)}';
+        }
+        if (lastUsage != null) {
+          yield 'USAGE:${jsonEncode(lastUsage)}';
         }
       } else {
         print(

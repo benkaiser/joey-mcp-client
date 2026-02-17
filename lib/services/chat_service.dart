@@ -431,6 +431,7 @@ class ChatService {
       String streamedContent = '';
       String streamedReasoning = '';
       List<dynamic>? detectedToolCalls;
+      Map<String, dynamic>? usageData;
 
       // Start streaming - mark as streaming to queue notifications
       _isStreaming = true;
@@ -453,6 +454,14 @@ class ChatService {
               );
             } catch (e) {
               print('ChatService: Failed to parse tool calls: $e');
+            }
+          } else if (chunk.startsWith('USAGE:')) {
+            final usageJson = chunk.substring('USAGE:'.length);
+            try {
+              usageData = jsonDecode(usageJson) as Map<String, dynamic>;
+              print('ChatService: Received usage data: $usageData');
+            } catch (e) {
+              print('ChatService: Failed to parse usage data: $e');
             }
           } else if (chunk.startsWith('REASONING:')) {
             streamedReasoning += chunk.substring('REASONING:'.length);
@@ -507,10 +516,16 @@ class ChatService {
               ? streamedReasoning.trim()
               : null,
           toolCallData: jsonEncode(detectedToolCalls),
+          usageData: usageData != null ? jsonEncode(usageData) : null,
         );
 
         _eventController.add(MessageCreated(message: assistantMessage));
         messages.add(assistantMessage);
+
+        // Emit usage event if available
+        if (usageData != null) {
+          _eventController.add(UsageReceived(usage: usageData!));
+        }
 
         // Execute tool calls
         final toolResults = await _executeToolCalls(detectedToolCalls);
@@ -566,10 +581,16 @@ class ChatService {
           content: finalContent,
           timestamp: DateTime.now(),
           reasoning: finalReasoning,
+          usageData: usageData != null ? jsonEncode(usageData) : null,
         );
 
         _eventController.add(MessageCreated(message: finalMessage));
         messages.add(finalMessage);
+
+        // Emit usage event if available
+        if (usageData != null) {
+          _eventController.add(UsageReceived(usage: usageData!));
+        }
 
         // Dump final message state to console
         print('\n===== FINAL MESSAGE DUMP =====');
