@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../models/message.dart';
 
 /// A button that shows a graph icon and displays usage/cost info on click.
 /// On desktop, also shows a tooltip on hover.
@@ -28,12 +29,12 @@ class UsageInfoButton extends StatelessWidget {
     parts.add('Out: $completionTokens');
     parts.add('Total: $totalTokens');
     if (cost != null) {
-      parts.add('Cost: \$${_formatCost(cost)}');
+      parts.add('Cost: \$${formatCost(cost)}');
     }
     return parts.join('\n');
   }
 
-  static String _formatCost(dynamic cost) {
+  static String formatCost(dynamic cost) {
     if (cost == null) return '—';
     final value = (cost is num) ? cost.toDouble() : double.tryParse(cost.toString()) ?? 0;
     if (value == 0) return '0';
@@ -143,17 +144,17 @@ class UsageDetailsDialog extends StatelessWidget {
           children: [
             // Token section
             _buildSectionHeader(context, 'Tokens'),
-            _buildRow(context, 'Prompt tokens', _formatNumber(promptTokens)),
+            _buildRow(context, 'Prompt tokens', formatNumber(promptTokens)),
             _buildRow(
               context,
               'Completion tokens',
-              _formatNumber(completionTokens),
+              formatNumber(completionTokens),
             ),
             _buildDivider(context),
             _buildRow(
               context,
               'Total tokens',
-              _formatNumber(totalTokens),
+              formatNumber(totalTokens),
               bold: true,
             ),
 
@@ -165,25 +166,25 @@ class UsageDetailsDialog extends StatelessWidget {
                 _buildRow(
                   context,
                   'Cached tokens',
-                  _formatNumber(cachedTokens),
+                  formatNumber(cachedTokens),
                 ),
               if (cacheWriteTokens != null && cacheWriteTokens > 0)
                 _buildRow(
                   context,
                   'Cache write tokens',
-                  _formatNumber(cacheWriteTokens),
+                  formatNumber(cacheWriteTokens),
                 ),
               if (audioInputTokens != null && audioInputTokens > 0)
                 _buildRow(
                   context,
                   'Audio tokens',
-                  _formatNumber(audioInputTokens),
+                  formatNumber(audioInputTokens),
                 ),
               if (videoTokens != null && videoTokens > 0)
                 _buildRow(
                   context,
                   'Video tokens',
-                  _formatNumber(videoTokens),
+                  formatNumber(videoTokens),
                 ),
             ],
 
@@ -195,13 +196,13 @@ class UsageDetailsDialog extends StatelessWidget {
                 _buildRow(
                   context,
                   'Reasoning tokens',
-                  _formatNumber(reasoningTokens),
+                  formatNumber(reasoningTokens),
                 ),
               if (imageOutputTokens != null && imageOutputTokens > 0)
                 _buildRow(
                   context,
                   'Image tokens',
-                  _formatNumber(imageOutputTokens),
+                  formatNumber(imageOutputTokens),
                 ),
             ],
 
@@ -214,26 +215,26 @@ class UsageDetailsDialog extends StatelessWidget {
                   _buildRow(
                     context,
                     'Prompt cost',
-                    '\$${UsageInfoButton._formatCost(promptCost)}',
+                    '\$${UsageInfoButton.formatCost(promptCost)}',
                   ),
                 if (completionCost != null)
                   _buildRow(
                     context,
                     'Completion cost',
-                    '\$${UsageInfoButton._formatCost(completionCost)}',
+                    '\$${UsageInfoButton.formatCost(completionCost)}',
                   ),
                 if (upstreamCost != null)
                   _buildRow(
                     context,
                     'Upstream cost',
-                    '\$${UsageInfoButton._formatCost(upstreamCost)}',
+                    '\$${UsageInfoButton.formatCost(upstreamCost)}',
                   ),
                 _buildDivider(context),
               ],
               _buildRow(
                 context,
                 'Total cost',
-                '\$${UsageInfoButton._formatCost(cost)}',
+                '\$${UsageInfoButton.formatCost(cost)}',
                 bold: true,
               ),
               if (isByok)
@@ -257,7 +258,7 @@ class UsageDetailsDialog extends StatelessWidget {
               _buildRow(
                 context,
                 'Web searches',
-                _formatNumber(webSearchRequests),
+                formatNumber(webSearchRequests),
               ),
             ],
           ],
@@ -331,7 +332,7 @@ class UsageDetailsDialog extends StatelessWidget {
     );
   }
 
-  String _formatNumber(dynamic value) {
+  static String formatNumber(dynamic value) {
     if (value == null) return '0';
     final num n = value is num ? value : num.tryParse(value.toString()) ?? 0;
     if (n >= 1000000) {
@@ -341,5 +342,181 @@ class UsageDetailsDialog extends StatelessWidget {
       return '${(n / 1000).toStringAsFixed(1)}K';
     }
     return n.toString();
+  }
+}
+
+/// Dialog that shows aggregated usage/cost across all messages in a conversation.
+class ConversationUsageDialog extends StatelessWidget {
+  final List<Message> messages;
+
+  const ConversationUsageDialog({super.key, required this.messages});
+
+  @override
+  Widget build(BuildContext context) {
+    // Collect all usage data from messages
+    final usageEntries = <Map<String, dynamic>>[];
+    for (final msg in messages) {
+      if (msg.usageData != null) {
+        try {
+          final usage = jsonDecode(msg.usageData!) as Map<String, dynamic>;
+          usageEntries.add(usage);
+        } catch (e) {
+          // Skip malformed usage data
+        }
+      }
+    }
+
+    if (usageEntries.isEmpty) {
+      return AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.bar_chart_rounded,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            const Text('Conversation Usage'),
+          ],
+        ),
+        content: const Text('No usage data available for this conversation.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+    }
+
+    // Total tokens come from the last message's usage (reflects current context window)
+    final lastUsage = usageEntries.last;
+    final totalTokens = lastUsage['total_tokens'] ?? 0;
+
+    // Sum costs across all messages
+    double totalCost = 0;
+    for (final usage in usageEntries) {
+      final cost = usage['cost'];
+      if (cost != null) {
+        totalCost += (cost is num)
+            ? cost.toDouble()
+            : double.tryParse(cost.toString()) ?? 0;
+      }
+    }
+
+    // Sum all prompt and completion tokens across all calls
+    int totalPromptTokens = 0;
+    int totalCompletionTokens = 0;
+    for (final usage in usageEntries) {
+      totalPromptTokens += ((usage['prompt_tokens'] ?? 0) as num).toInt();
+      totalCompletionTokens +=
+          ((usage['completion_tokens'] ?? 0) as num).toInt();
+    }
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            Icons.bar_chart_rounded,
+            size: 20,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          const Text('Conversation Usage'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader(context, 'Summary'),
+            _buildRow(context, 'LLM calls', usageEntries.length.toString()),
+            _buildRow(
+              context,
+              'Current context',
+              '${UsageDetailsDialog.formatNumber(totalTokens)} tokens',
+            ),
+            const SizedBox(height: 16),
+            _buildSectionHeader(context, 'Total Tokens (all calls)'),
+            _buildRow(
+              context,
+              'Prompt tokens',
+              UsageDetailsDialog.formatNumber(totalPromptTokens),
+            ),
+            _buildRow(
+              context,
+              'Completion tokens',
+              UsageDetailsDialog.formatNumber(totalCompletionTokens),
+            ),
+            if (totalCost > 0) ...[
+              const SizedBox(height: 16),
+              _buildSectionHeader(context, 'Cost'),
+              _buildRow(
+                context,
+                'Total cost',
+                '\$${UsageInfoButton.formatCost(totalCost)}',
+                bold: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.primary,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    String label,
+    String value, {
+    bool bold = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurface,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontFamily: 'monospace',
+              color: Theme.of(context).colorScheme.onSurface,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

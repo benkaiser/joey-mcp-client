@@ -27,6 +27,7 @@ import '../widgets/message_input.dart';
 import '../widgets/message_list.dart';
 import '../widgets/mcp_oauth_card.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
+import '../widgets/usage_info_button.dart';
 import 'mcp_debug_screen.dart';
 import 'mcp_prompts_screen.dart';
 
@@ -853,6 +854,18 @@ class _ChatScreenState extends State<ChatScreen>
             ),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             actions: [
+              IconButton(
+                icon: const Icon(Icons.bar_chart_rounded),
+                tooltip: 'Conversation usage',
+                onPressed: () {
+                  final messages = provider.getMessages(widget.conversation.id);
+                  showDialog(
+                    context: context,
+                    builder: (context) =>
+                        ConversationUsageDialog(messages: messages),
+                  );
+                },
+              ),
               IconButton(
                 icon: Icon(
                   _showThinking ? Icons.visibility : Icons.visibility_off,
