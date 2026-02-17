@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../utils/date_formatter.dart';
 import 'tool_result_media.dart';
+import 'usage_info_button.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -324,6 +325,9 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Usage info button for messages with usage data
+                      if (message.usageData != null)
+                        UsageInfoButton(usageDataJson: message.usageData!),
                       // Action buttons
                       _buildActionButton(
                         context: context,

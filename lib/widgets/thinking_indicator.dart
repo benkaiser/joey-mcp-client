@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/message.dart';
+import 'usage_info_button.dart';
 
 /// A minimal left-aligned indicator for thinking/tool messages
 /// when full thinking display is disabled.
@@ -13,6 +14,10 @@ class ThinkingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final indicators = _getIndicators();
     if (indicators.isEmpty) return const SizedBox.shrink();
+
+    // Show usage button inline for assistant messages with tool calls
+    final showUsage = message.role == MessageRole.assistant &&
+        message.usageData != null;
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, bottom: 8),
@@ -38,6 +43,11 @@ class ThinkingIndicator extends StatelessWidget {
                     fontStyle: FontStyle.italic,
                   ),
                 ),
+                // Show usage button inline on the last indicator row
+                if (showUsage && indicator == indicators.last) ...[
+                  const SizedBox(width: 6),
+                  UsageInfoButton(usageDataJson: message.usageData!),
+                ],
               ],
             ),
           );

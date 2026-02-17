@@ -465,6 +465,7 @@ class MessageList extends StatelessWidget {
                 toolCallData: message.toolCallData,
                 toolCallId: message.toolCallId,
                 toolName: message.toolName,
+                usageData: message.usageData,
               );
               return MessageBubble(
                 message: formattedMessage,

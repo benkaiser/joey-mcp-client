@@ -29,6 +29,8 @@ class Message {
   imageData; // JSON array of image objects [{data: base64, mimeType: string}]
   final String?
   audioData; // JSON array of audio objects [{data: base64, mimeType: string}]
+  final String?
+  usageData; // JSON string of usage/cost data from OpenRouter
 
   Message({
     required this.id,
@@ -44,6 +46,7 @@ class Message {
     this.notificationData,
     this.imageData,
     this.audioData,
+    this.usageData,
   });
 
   Map<String, dynamic> toMap() {
@@ -61,6 +64,7 @@ class Message {
       'notificationData': notificationData,
       'imageData': imageData,
       'audioData': audioData,
+      'usageData': usageData,
     };
   }
 
@@ -79,6 +83,7 @@ class Message {
       notificationData: map['notificationData'],
       imageData: map['imageData'],
       audioData: map['audioData'],
+      usageData: map['usageData'],
     );
   }
 
@@ -96,6 +101,7 @@ class Message {
     String? notificationData,
     String? imageData,
     String? audioData,
+    String? usageData,
   }) {
     return Message(
       id: id ?? this.id,
@@ -111,6 +117,7 @@ class Message {
       notificationData: notificationData ?? this.notificationData,
       imageData: imageData ?? this.imageData,
       audioData: audioData ?? this.audioData,
+      usageData: usageData ?? this.usageData,
     );
   }
 
