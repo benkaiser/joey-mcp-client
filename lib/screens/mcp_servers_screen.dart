@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/mcp_server.dart';
 import '../services/database_service.dart';
+import '../utils/in_app_browser.dart';
+import '../utils/privacy_constants.dart';
 
 class McpServersScreen extends StatefulWidget {
   const McpServersScreen({super.key});
@@ -95,6 +98,17 @@ class _McpServersScreenState extends State<McpServersScreen> {
   }
 
   Future<void> _showAddEditDialog([McpServer? server]) async {
+    // Show one-time data sharing consent before adding a new server
+    if (server == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final consentGiven = prefs.getBool(PrivacyConstants.mcpDataConsentKey) ?? false;
+      if (!consentGiven) {
+        final accepted = await _showMcpDataConsentDialog();
+        if (accepted != true) return;
+        await prefs.setBool(PrivacyConstants.mcpDataConsentKey, true);
+      }
+    }
+
     final result = await showDialog<McpServer>(
       context: context,
       builder: (context) => _McpServerDialog(server: server),
@@ -123,6 +137,58 @@ class _McpServersScreenState extends State<McpServersScreen> {
         }
       }
     }
+  }
+
+  Future<bool?> _showMcpDataConsentDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.shield_outlined, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Data Sharing Notice')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'When you connect MCP servers, tool commands and related data will be sent to those servers during conversations. Each MCP server is operated by its own provider and is subject to its own privacy practices.',
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                launchInAppBrowser(
+                  Uri.parse(PrivacyConstants.privacyPolicyUrl),
+                  context: context,
+                );
+              },
+              child: Text(
+                'Read our Privacy Policy',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('I Understand'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

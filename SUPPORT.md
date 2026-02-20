@@ -34,7 +34,7 @@ In the app, open the MCP server settings and add the HTTP endpoint URL for your 
 Joey is a paid app on the App Store and Google Play. The source code is available on GitHub, so you can also build it from source yourself. AI model usage is billed separately through your OpenRouter account.
 
 **What models are supported?**
-Joey supports any model available through OpenRouter, including GPT, Claude, Gemini, Deepseek, and hundreds more.
+Joey supports any model available through OpenRouter, including Claude, Gemini, Deepseek, and hundreds more.
 
 ### Contact
 

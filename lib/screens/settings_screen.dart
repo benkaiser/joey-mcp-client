@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
+import '../utils/in_app_browser.dart';
+import '../utils/privacy_constants.dart';
 import 'model_picker_screen.dart';
 import 'mcp_servers_screen.dart';
 
@@ -255,6 +257,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Delete All Conversations'),
               subtitle: const Text('This action cannot be undone'),
               onTap: () => _showDeleteAllDialog(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Legal Section
+          _buildSectionHeader('Legal'),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('Privacy Policy'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => launchInAppBrowser(
+                Uri.parse(PrivacyConstants.privacyPolicyUrl),
+                context: context,
+              ),
             ),
           ),
 
