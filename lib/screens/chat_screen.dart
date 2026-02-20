@@ -450,6 +450,8 @@ class _ChatScreenState extends State<ChatScreen>
         }
       } on OpenRouterAuthException {
         _handleAuthError();
+      } on OpenRouterPaymentRequiredException {
+        // Handled by ChatEventHandlerMixin via PaymentRequired event
       } catch (e, stackTrace) {
         print('Error in _sendMessage: $e');
         print('Stack trace: $stackTrace');
@@ -690,6 +692,8 @@ class _ChatScreenState extends State<ChatScreen>
       );
     } on OpenRouterAuthException {
       _handleAuthError();
+    } on OpenRouterPaymentRequiredException {
+      // Handled by ChatEventHandlerMixin via PaymentRequired event
     } catch (e, stackTrace) {
       print('Error in _regenerateLastResponse: $e');
       print('Stack trace: $stackTrace');

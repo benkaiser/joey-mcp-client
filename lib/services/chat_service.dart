@@ -485,6 +485,9 @@ class ChatService {
       } on OpenRouterAuthException {
         _eventController.add(AuthenticationRequired());
         rethrow;
+      } on OpenRouterPaymentRequiredException {
+        _eventController.add(PaymentRequired());
+        rethrow;
       } catch (e) {
         _eventController.add(ErrorOccurred(error: e.toString()));
         rethrow;

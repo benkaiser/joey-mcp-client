@@ -62,6 +62,9 @@ class ErrorOccurred extends ChatEvent {
 /// Event emitted when authentication with OpenRouter is required
 class AuthenticationRequired extends ChatEvent {}
 
+/// Event emitted when the user has insufficient OpenRouter credits (HTTP 402)
+class PaymentRequired extends ChatEvent {}
+
 /// Event emitted when usage/cost data is received from OpenRouter
 class UsageReceived extends ChatEvent {
   final Map<String, dynamic> usage;
