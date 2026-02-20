@@ -43,6 +43,15 @@ class OpenRouterAuthException implements Exception {
   String toString() => 'OpenRouterAuthException: $message';
 }
 
+/// Exception thrown when the user has insufficient credits (HTTP 402)
+class OpenRouterPaymentRequiredException implements Exception {
+  final String message;
+  OpenRouterPaymentRequiredException(this.message);
+
+  @override
+  String toString() => 'OpenRouterPaymentRequiredException: $message';
+}
+
 class OpenRouterService {
   static const String _apiKeyKey = 'openrouter_api_key';
   static const String _authUrl = 'https://openrouter.ai/auth';
@@ -229,6 +238,12 @@ class OpenRouterService {
         await logout();
         throw OpenRouterAuthException(
           'Authentication expired. Please log in again.',
+        );
+      }
+      if (e.response?.statusCode == 402) {
+        print('OpenRouter: 402 Payment Required - insufficient credits');
+        throw OpenRouterPaymentRequiredException(
+          'Insufficient credits. Please add credits to your OpenRouter account.',
         );
       }
       throw Exception('Error making chat completion request: ${e.message}');
@@ -491,6 +506,12 @@ class OpenRouterService {
         await logout();
         throw OpenRouterAuthException(
           'Authentication expired. Please log in again.',
+        );
+      }
+      if (e.response?.statusCode == 402) {
+        print('OpenRouter: 402 Payment Required - insufficient credits');
+        throw OpenRouterPaymentRequiredException(
+          'Insufficient credits. Please add credits to your OpenRouter account.',
         );
       }
       throw Exception(

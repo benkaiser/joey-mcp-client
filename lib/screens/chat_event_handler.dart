@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import '../providers/conversation_provider.dart';
@@ -122,6 +123,16 @@ mixin ChatEventHandlerMixin on State<ChatScreen> {
         isToolExecutingValue = false;
         authenticationRequiredValue = true;
       });
+    } else if (event is PaymentRequired) {
+      // Handle insufficient credits by showing a dialog
+      setState(() {
+        isLoadingValue = false;
+        streamingContentValue = '';
+        streamingReasoningValue = '';
+        currentToolNameValue = null;
+        isToolExecutingValue = false;
+      });
+      _showPaymentRequiredDialog();
     } else if (event is ErrorOccurred) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -161,6 +172,43 @@ mixin ChatEventHandlerMixin on State<ChatScreen> {
     } else if (event is McpAuthRequiredForServer) {
       handleServerNeedsOAuth(event.serverId, event.serverUrl);
     }
+  }
+
+  /// Show a dialog when the user has insufficient OpenRouter credits
+  void _showPaymentRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.account_balance_wallet, color: Colors.orange),
+            SizedBox(width: 8),
+            Expanded(child: Text('Insufficient Credits')),
+          ],
+        ),
+        content: const Text(
+          'Your OpenRouter account does not have enough credits to use this model. '
+          'Please add credits to your account to continue.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              launchUrl(
+                Uri.parse('https://openrouter.ai/settings/credits'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+            icon: const Icon(Icons.open_in_new),
+            label: const Text('Add Credits'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Show the sampling request dialog for user approval
