@@ -109,7 +109,7 @@ class _McpDebugScreenState extends State<McpDebugScreen> {
         if (!_om.serversNeedingOAuth.any((s) => s.id == server.id)) {
           _om.handleServerNeedsOAuth(server, _sm.mcpServers);
         }
-        await _om.startServerOAuth(server);
+        await _om.startServerOAuth(server, mcpServers: _sm.mcpServers);
       });
 
   // --------------- Build ---------------

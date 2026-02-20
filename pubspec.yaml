@@ -67,6 +67,7 @@ dependencies:
   record: ^6.2.0
   file_picker: ^10.3.10
   flutter_custom_tabs: ^2.5.0
+  flutter_web_auth_2: ^3.1.2
 
 dev_dependencies:
   flutter_test:
