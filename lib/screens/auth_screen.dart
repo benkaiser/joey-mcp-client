@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:app_links/app_links.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
 import '../services/openrouter_service.dart';
 import '../utils/in_app_browser.dart';
 import '../utils/privacy_constants.dart';
@@ -15,8 +13,6 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   final OpenRouterService _openRouterService = OpenRouterService();
-  final AppLinks _appLinks = AppLinks();
-  StreamSubscription? _deepLinkSubscription;
   bool _isAuthenticating = false;
   bool _consentGiven = false;
   String? _errorMessage;
@@ -24,14 +20,7 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    _initDeepLinkListener();
     _loadConsentState();
-  }
-
-  @override
-  void dispose() {
-    _deepLinkSubscription?.cancel();
-    super.dispose();
   }
 
   Future<void> _loadConsentState() async {
@@ -48,36 +37,8 @@ class _AuthScreenState extends State<AuthScreen> {
     await prefs.setBool('privacy_consent_given', true);
   }
 
-  /// Initialize deep link listener for OAuth callback
-  void _initDeepLinkListener() {
-    _deepLinkSubscription = _appLinks.uriLinkStream.listen(
-      (Uri uri) {
-        // Listen to both custom scheme (joey://auth) and HTTPS URL
-        final isCustomScheme = uri.scheme == 'joey' && uri.host == 'auth';
-        final isHttpsCallback =
-            uri.scheme == 'https' &&
-            uri.host == 'openrouterauth.benkaiser.dev' &&
-            uri.path == '/api/auth';
-
-        if (isCustomScheme || isHttpsCallback) {
-          _handleAuthCallback(uri);
-        }
-      },
-      onError: (err) {
-        setState(() {
-          _errorMessage = 'Deep link error: $err';
-          _isAuthenticating = false;
-        });
-      },
-    );
-  }
-
   /// Handle OAuth callback with authorization code
   Future<void> _handleAuthCallback(Uri uri) async {
-    // Dismiss the in-app browser (SFSafariViewController / Chrome Custom Tab)
-    // so the user sees the app immediately after authenticating.
-    await closeInAppBrowser();
-
     final code = uri.queryParameters['code'];
 
     if (code == null) {
@@ -109,20 +70,28 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  /// Start OAuth flow by opening OpenRouter in browser
+  /// Start OAuth flow by opening OpenRouter in an auth session
   Future<void> _startAuth() async {
     setState(() {
       _errorMessage = null;
+      _isAuthenticating = true;
     });
 
     try {
       final authUrl = _openRouterService.startAuthFlow();
       final uri = Uri.parse(authUrl);
-      await launchInAppBrowser(uri, context: context);
+      final callbackUri = await launchAuthSession(
+        uri,
+        callbackUrlScheme: 'joey',
+      );
+      await _handleAuthCallback(callbackUri);
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to start authentication: ${e.toString()}';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to start authentication: ${e.toString()}';
+          _isAuthenticating = false;
+        });
+      }
     }
   }
 

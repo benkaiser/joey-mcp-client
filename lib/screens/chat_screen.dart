@@ -178,7 +178,6 @@ class _ChatScreenState extends State<ChatScreen>
         provider.addTransientMessage(oauthMessage);
       }
     };
-    _oauthManager.initDeepLinkListener();
 
     // Wire up server manager
     _serverManager.oauthManager = _oauthManager;
@@ -889,7 +888,10 @@ class _ChatScreenState extends State<ChatScreen>
                 McpOAuthBanner(
                   serversNeedingAuth: _oauthManager.serversNeedingOAuth,
                   serverOAuthStatus: _oauthManager.serverOAuthStatus,
-                  onAuthenticate: (server) => _oauthManager.startServerOAuth(server),
+                  onAuthenticate: (server) => _oauthManager.startServerOAuth(
+                    server,
+                    mcpServers: _serverManager.mcpServers,
+                  ),
                   onSkip: (server) => _oauthManager.skipServerOAuth(server),
                   onDismiss: () {
                     _oauthManager.dismissAll();

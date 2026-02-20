@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:app_links/app_links.dart';
 import '../models/mcp_server.dart';
 import '../utils/in_app_browser.dart';
 import '../widgets/mcp_oauth_card.dart';
@@ -16,8 +14,6 @@ import 'mcp_oauth_service.dart';
 /// - [onServerOAuthRequired] — called when a server needs OAuth authentication
 class McpOAuthManager extends ChangeNotifier {
   final McpOAuthService _mcpOAuthService = McpOAuthService();
-  final AppLinks _appLinks = AppLinks();
-  StreamSubscription? _deepLinkSubscription;
 
   /// Servers that need OAuth authentication
   final List<McpServer> serversNeedingOAuth = [];
@@ -39,26 +35,6 @@ class McpOAuthManager extends ChangeNotifier {
 
   /// Access the underlying OAuth service.
   McpOAuthService get oauthService => _mcpOAuthService;
-
-  /// Initialize deep link listener for MCP OAuth callbacks
-  void initDeepLinkListener() {
-    _deepLinkSubscription = _appLinks.uriLinkStream.listen(
-      (Uri uri) {
-        final isCustomScheme = uri.scheme == 'joey' && uri.host == 'mcp-oauth';
-        final isHttpsCallback =
-            uri.scheme == 'https' &&
-            uri.host == 'openrouterauth.benkaiser.dev' &&
-            uri.path == '/api/mcp-oauth';
-
-        if (isCustomScheme || isHttpsCallback) {
-          handleMcpOAuthCallback(uri);
-        }
-      },
-      onError: (err) {
-        debugPrint('MCP OAuth deep link error: $err');
-      },
-    );
-  }
 
   /// Create an OAuth provider for a server
   McpOAuthClientProvider createOAuthProvider(McpServer server) {
@@ -158,15 +134,11 @@ class McpOAuthManager extends ChangeNotifier {
     }
   }
 
-  /// Handle MCP OAuth callback from deep link
+  /// Handle MCP OAuth callback from auth session
   Future<void> handleMcpOAuthCallback(
     Uri uri, {
     List<McpServer> mcpServers = const [],
   }) async {
-    // Dismiss the in-app browser (SFSafariViewController / Chrome Custom Tab)
-    // so the user sees the app immediately after authenticating.
-    await closeInAppBrowser();
-
     final code = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
     final error = uri.queryParameters['error'];
@@ -291,7 +263,10 @@ class McpOAuthManager extends ChangeNotifier {
   }
 
   /// Start OAuth flow for a specific server
-  Future<void> startServerOAuth(McpServer server) async {
+  Future<void> startServerOAuth(
+    McpServer server, {
+    List<McpServer> mcpServers = const [],
+  }) async {
     try {
       // Create provider if not exists
       if (!oauthProviders.containsKey(server.id)) {
@@ -301,7 +276,7 @@ class McpOAuthManager extends ChangeNotifier {
       serverOAuthStatus[server.id] = McpOAuthCardStatus.inProgress;
       notifyListeners();
 
-      // Build and launch auth URL
+      // Build and launch auth URL via ASWebAuthenticationSession / Auth Tab
       final authUrl = await _mcpOAuthService.buildAuthorizationUrl(
         serverUrl: server.url,
         clientId: server.oauthClientId,
@@ -309,7 +284,11 @@ class McpOAuthManager extends ChangeNotifier {
       );
 
       final uri = Uri.parse(authUrl);
-      await launchInAppBrowser(uri);
+      final callbackUri = await launchAuthSession(
+        uri,
+        callbackUrlScheme: 'joey',
+      );
+      await handleMcpOAuthCallback(callbackUri, mcpServers: mcpServers);
     } catch (e) {
       debugPrint('Failed to start OAuth for ${server.name}: $e');
       serverOAuthStatus[server.id] = McpOAuthCardStatus.failed;
@@ -330,10 +309,12 @@ class McpOAuthManager extends ChangeNotifier {
   }
 
   /// Start OAuth for all servers that need it
-  Future<void> startAllServersOAuth() async {
+  Future<void> startAllServersOAuth({
+    List<McpServer> mcpServers = const [],
+  }) async {
     for (final server in serversNeedingOAuth) {
       if (serverOAuthStatus[server.id] != McpOAuthCardStatus.inProgress) {
-        await startServerOAuth(server);
+        await startServerOAuth(server, mcpServers: mcpServers);
         // Only start one at a time to avoid confusion
         break;
       }
@@ -369,9 +350,10 @@ class McpOAuthManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cancel the deep-link subscription.
+  /// Clean up resources (kept for API compatibility).
   void close() {
-    _deepLinkSubscription?.cancel();
+    // No-op: deep link listener has been removed in favour of
+    // blocking FlutterWebAuth2 calls.
   }
 
   /// Dispose of resources
