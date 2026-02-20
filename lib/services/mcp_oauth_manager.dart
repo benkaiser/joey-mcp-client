@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import '../models/mcp_server.dart';
+import '../utils/in_app_browser.dart';
 import '../widgets/mcp_oauth_card.dart';
 import 'database_service.dart';
 import 'mcp_oauth_service.dart';
@@ -163,6 +163,10 @@ class McpOAuthManager extends ChangeNotifier {
     Uri uri, {
     List<McpServer> mcpServers = const [],
   }) async {
+    // Dismiss the in-app browser (SFSafariViewController / Chrome Custom Tab)
+    // so the user sees the app immediately after authenticating.
+    await closeInAppBrowser();
+
     final code = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
     final error = uri.queryParameters['error'];
@@ -305,11 +309,7 @@ class McpOAuthManager extends ChangeNotifier {
       );
 
       final uri = Uri.parse(authUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        throw Exception('Could not launch browser');
-      }
+      await launchInAppBrowser(uri);
     } catch (e) {
       debugPrint('Failed to start OAuth for ${server.name}: $e');
       serverOAuthStatus[server.id] = McpOAuthCardStatus.failed;
