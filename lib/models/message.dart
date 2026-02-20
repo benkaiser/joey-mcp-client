@@ -161,7 +161,7 @@ class Message {
       };
     } else if (toolCallData != null) {
       // Assistant message with tool calls
-      return {'role': 'assistant', 'tool_calls': jsonDecode(toolCallData!)};
+      return {'role': 'assistant', 'content': content, 'tool_calls': jsonDecode(toolCallData!)};
     } else {
       // Regular user/assistant message
       final apiRole = role == MessageRole.user ? 'user' : 'assistant';

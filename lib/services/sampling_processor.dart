@@ -105,7 +105,7 @@ class SamplingProcessor {
               });
             }
           }
-          apiMessages.add({'role': 'assistant', 'tool_calls': toolCalls});
+          apiMessages.add({'role': 'assistant', 'content': '', 'tool_calls': toolCalls});
         } else if (role == 'user' && hasToolResults) {
           // For OpenRouter, tool results go in user messages
           // We need to convert to the format OpenRouter expects
@@ -225,7 +225,7 @@ class SamplingProcessor {
             final toolResults = await executeToolCalls(toolCalls);
 
             // Add assistant message with tool calls to apiMessages
-            apiMessages.add({'role': 'assistant', 'tool_calls': toolCalls});
+            apiMessages.add({'role': 'assistant', 'content': '', 'tool_calls': toolCalls});
 
             // Add tool results to apiMessages
             for (final toolResult in toolResults) {
