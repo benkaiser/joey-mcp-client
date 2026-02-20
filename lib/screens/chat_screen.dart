@@ -819,31 +819,17 @@ class _ChatScreenState extends State<ChatScreen>
                         if (_modelDetails != null &&
                             _modelDetails!['pricing'] != null) ...[
                           const SizedBox(width: 8),
-                          Text(
-                            getPricingText(),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.6),
-                                  fontSize: 11,
-                                ),
-                          ),
-                        ],
-                        if (_serverManager.mcpServers.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.dns,
-                            size: 14,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${_serverManager.mcpServers.length} MCP',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontSize: 11,
-                                ),
+                          Flexible(
+                            child: Text(
+                              getPricingText(),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                  ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ],

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import '../services/openrouter_service.dart';
+import '../utils/in_app_browser.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -56,6 +56,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// Handle OAuth callback with authorization code
   Future<void> _handleAuthCallback(Uri uri) async {
+    // Dismiss the in-app browser (SFSafariViewController / Chrome Custom Tab)
+    // so the user sees the app immediately after authenticating.
+    await closeInAppBrowser();
+
     final code = uri.queryParameters['code'];
 
     if (code == null) {
@@ -95,12 +99,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       final authUrl = _openRouterService.startAuthFlow();
       final uri = Uri.parse(authUrl);
-
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        throw Exception('Could not launch browser');
-      }
+      await launchInAppBrowser(uri, context: context);
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to start authentication: ${e.toString()}';
