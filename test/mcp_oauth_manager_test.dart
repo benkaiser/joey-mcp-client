@@ -10,7 +10,7 @@ void main() {
   // McpOAuthManager (e.g. updateMcpServer) do not hit the file system.
   setUpAll(() {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfiInMemory;
+    databaseFactory = databaseFactoryFfi;
   });
 
   late McpOAuthManager oauthManager;

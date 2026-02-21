@@ -35,7 +35,7 @@ class MockMcpClientService extends McpClientService {
   }) : super(serverUrl: serverUrl);
 
   @override
-  Future<void> initialize() async {
+  Future<void> initialize({String? sessionId}) async {
     await Future.delayed(const Duration(milliseconds: 50));
     _isInitialized = true;
   }
