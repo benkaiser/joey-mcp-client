@@ -49,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (defaultModel != null) {
       // Fetch model details
       try {
+        if (!context.mounted) return;
         final openRouterService = context.read<OpenRouterService>();
         final models = await openRouterService.getModels();
         final modelDetails = models.firstWhere(
@@ -379,28 +380,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 12),
-                ...options.map((value) {
-                  final label = value == 0 ? 'Unlimited' : '$value';
-                  final isSelected = _maxToolCalls == value;
-                  return RadioListTile<int>(
-                    title: Text(label),
-                    value: value,
-                    groupValue: _maxToolCalls,
-                    dense: true,
-                    selected: isSelected,
-                    onChanged: (int? newValue) async {
-                      if (newValue != null) {
-                        await DefaultModelService.setMaxToolCalls(newValue);
-                        setState(() {
-                          _maxToolCalls = newValue;
-                        });
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
+                RadioGroup<int>(
+                  groupValue: _maxToolCalls,
+                  onChanged: (int? newValue) async {
+                    if (newValue != null) {
+                      await DefaultModelService.setMaxToolCalls(newValue);
+                      setState(() {
+                        _maxToolCalls = newValue;
+                      });
+                      if (context.mounted) {
+                        Navigator.pop(context);
                       }
-                    },
-                  );
-                }),
+                    }
+                  },
+                  child: Column(
+                    children: options.map((value) {
+                      final label = value == 0 ? 'Unlimited' : '$value';
+                      final isSelected = _maxToolCalls == value;
+                      return RadioListTile<int>(
+                        title: Text(label),
+                        value: value,
+                        dense: true,
+                        selected: isSelected,
+                      );
+                    }).toList(),
+                  ),
+                ),
               ],
             ),
           ),

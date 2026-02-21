@@ -196,7 +196,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
     final value = _values[field.name]?.toString();
 
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: field.label,
         hintText: field.description,
@@ -265,7 +265,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
               });
             },
           );
-        }).toList(),
+        }),
         if (_errors[field.name] != null)
           Padding(
             padding: const EdgeInsets.only(left: 16, top: 4),
@@ -330,7 +330,7 @@ class _ElicitationFormScreenState extends State<ElicitationFormScreen> {
                 padding: const EdgeInsets.only(bottom: 16),
                 child: _buildField(field),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),

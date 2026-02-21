@@ -232,7 +232,6 @@ class McpOAuthService {
 
   /// Redirect URI for OAuth callbacks
   static const String _redirectUri = 'joey://mcp-oauth/callback';
-  static const String _httpsRedirectUri = 'https://openrouterauth.benkaiser.dev/api/mcp-oauth';
 
   McpOAuthService() : _dio = Dio() {
     _dio.options.connectTimeout = const Duration(seconds: 30);
@@ -511,17 +510,6 @@ class McpOAuthService {
     return authUri.toString();
   }
 
-  /// Get canonical resource URI per RFC 8707
-  String _getCanonicalResourceUri(String serverUrl) {
-    final uri = Uri.parse(serverUrl);
-    // Remove trailing slash if present (unless semantically significant)
-    var path = uri.path;
-    if (path.endsWith('/') && path.length > 1) {
-      path = path.substring(0, path.length - 1);
-    }
-    return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}$path';
-  }
-
   /// Exchange authorization code for tokens
   Future<McpOAuthTokens> exchangeCodeForTokens({
     required String authorizationCode,
@@ -794,9 +782,7 @@ class McpOAuthClientProvider implements OAuthClientProvider {
   @override
   Future<OAuthTokens?> tokens() async {
     // Try to load tokens if not already loaded
-    if (_tokens == null) {
-      _tokens = await _loadTokens(serverUrl);
-    }
+    _tokens ??= await _loadTokens(serverUrl);
 
     if (_tokens == null) {
       return null;

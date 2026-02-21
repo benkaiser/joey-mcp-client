@@ -646,6 +646,7 @@ class _ChatScreenState extends State<ChatScreen>
     });
 
     try {
+      if (!context.mounted) return;
       final openRouterService = context.read<OpenRouterService>();
 
       // Initialize ChatService if needed

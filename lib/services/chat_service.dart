@@ -131,7 +131,6 @@ class ChatService {
   /// Current partial state when cancelled
   String _partialContent = '';
   String _partialReasoning = '';
-  List<dynamic>? _partialToolCalls;
 
   void dispose() {
     _cancelToken?.cancel();
@@ -244,7 +243,6 @@ class ChatService {
       // Clear partial state
       _partialContent = '';
       _partialReasoning = '';
-      _partialToolCalls = null;
 
       // Emit conversation complete event
       _eventController.add(ConversationComplete());
@@ -337,7 +335,6 @@ class ChatService {
     // Reset partial state and cancellation flag
     _partialContent = '';
     _partialReasoning = '';
-    _partialToolCalls = null;
     _wasCancelled = false;
 
     while (unlimited || iterationCount < maxIterations) {
@@ -527,7 +524,7 @@ class ChatService {
 
         // Emit usage event if available
         if (usageData != null) {
-          _eventController.add(UsageReceived(usage: usageData!));
+          _eventController.add(UsageReceived(usage: usageData));
         }
 
         // Execute tool calls
@@ -592,7 +589,7 @@ class ChatService {
 
         // Emit usage event if available
         if (usageData != null) {
-          _eventController.add(UsageReceived(usage: usageData!));
+          _eventController.add(UsageReceived(usage: usageData));
         }
 
         // Dump final message state to console

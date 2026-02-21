@@ -210,14 +210,12 @@ class McpOAuthManager extends ChangeNotifier {
         return;
       }
 
-      if (server == null) {
-        server = mcpServers.firstWhere(
+      server ??= mcpServers.firstWhere(
+        (s) => s.url == pendingState.resourceUrl,
+        orElse: () => serversNeedingOAuth.firstWhere(
           (s) => s.url == pendingState.resourceUrl,
-          orElse: () => serversNeedingOAuth.firstWhere(
-            (s) => s.url == pendingState.resourceUrl,
-          ),
-        );
-      }
+        ),
+      );
 
       await completeServerOAuth(server, tokens, mcpServers);
     } catch (e) {

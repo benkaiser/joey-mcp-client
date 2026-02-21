@@ -5,7 +5,6 @@ import 'dart:async';
 import 'package:joey_mcp_client_flutter/services/chat_service.dart';
 import 'package:joey_mcp_client_flutter/services/openrouter_service.dart';
 import 'package:joey_mcp_client_flutter/services/mcp_client_service.dart';
-import 'package:joey_mcp_client_flutter/models/message.dart';
 
 // Generate mocks for OpenRouterService
 @GenerateMocks([OpenRouterService])
@@ -100,13 +99,10 @@ void main() {
       )).thenAnswer((_) async => mockOpenRouterResponse);
 
       // Act: Trigger the sampling request through the MCP client's handler
-      SamplingRequestReceived? samplingEvent;
-
       // Listen for the event
       final eventCompleter = Completer<void>();
       chatService.events.listen((event) {
         if (event is SamplingRequestReceived) {
-          samplingEvent = event;
           // Simulate approval
           event.onApprove(samplingRequest, {
             'role': 'assistant',
@@ -291,7 +287,7 @@ void main() {
       };
 
       // Act
-      final response = await chatService.processSamplingRequest(
+      await chatService.processSamplingRequest(
         request: samplingRequest,
         preferredModel: 'anthropic/claude-3-5-sonnet',
       );
@@ -430,24 +426,8 @@ void main() {
     });
 
     test('should handle sampling request rejection', () async {
-      // Arrange
-      final samplingRequest = {
-        'jsonrpc': '2.0',
-        'id': 789,
-        'method': 'sampling/createMessage',
-        'params': {
-          'messages': [
-            {
-              'role': 'user',
-              'content': {'type': 'text', 'text': 'Test'},
-            },
-          ],
-        },
-      };
-
       // Act & Assert
       final eventCompleter = Completer<void>();
-      Exception? caughtException;
 
       // Listen for the sampling event and reject it
       chatService.events.listen((event) {
