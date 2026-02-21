@@ -84,6 +84,7 @@ dev_dependencies:
   # Testing
   mockito: ^5.4.4
   build_runner: ^2.4.6
+  sqflite_common_ffi: ^2.3.3
 
   # App icon generation
   flutter_launcher_icons: ^0.14.3

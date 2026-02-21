@@ -115,23 +115,38 @@ class McpOAuthManager extends ChangeNotifier {
   /// Handle when a server indicates it needs OAuth
   void handleServerNeedsOAuth(McpServer server, List<McpServer> mcpServers) {
     final index = mcpServers.indexWhere((s) => s.id == server.id);
-    if (index >= 0 && !serversNeedingOAuth.any((s) => s.id == server.id)) {
-      // Update in-memory server with required status
-      final updatedServer = mcpServers[index].copyWith(
-        oauthStatus: McpOAuthStatus.required,
-        updatedAt: DateTime.now(),
-      );
-      mcpServers[index] = updatedServer;
+    if (index < 0) return;
 
-      serversNeedingOAuth.add(updatedServer);
-      serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
-      notifyListeners();
+    final existingIdx = serversNeedingOAuth.indexWhere((s) => s.id == server.id);
+    final existingStatus = serverOAuthStatus[server.id];
 
-      // Persist to database
-      DatabaseService.instance.updateMcpServer(updatedServer);
-
-      onServerOAuthRequired?.call(server.name);
+    // If already pending or in-progress, don't add again
+    if (existingIdx >= 0 && existingStatus != McpOAuthCardStatus.completed) {
+      return;
     }
+
+    // If this server previously completed OAuth (banner was hidden) but now needs
+    // auth again (e.g. server restarted), remove the stale completed entry so we
+    // can re-add it with a fresh pending status below.
+    if (existingIdx >= 0) {
+      serversNeedingOAuth.removeAt(existingIdx);
+    }
+
+    // Update in-memory server with required status
+    final updatedServer = mcpServers[index].copyWith(
+      oauthStatus: McpOAuthStatus.required,
+      updatedAt: DateTime.now(),
+    );
+    mcpServers[index] = updatedServer;
+
+    serversNeedingOAuth.add(updatedServer);
+    serverOAuthStatus[server.id] = McpOAuthCardStatus.pending;
+    notifyListeners();
+
+    // Persist to database
+    DatabaseService.instance.updateMcpServer(updatedServer);
+
+    onServerOAuthRequired?.call(server.name);
   }
 
   /// Handle MCP OAuth callback from auth session
@@ -195,14 +210,12 @@ class McpOAuthManager extends ChangeNotifier {
         return;
       }
 
-      if (server == null) {
-        server = mcpServers.firstWhere(
+      server ??= mcpServers.firstWhere(
+        (s) => s.url == pendingState.resourceUrl,
+        orElse: () => serversNeedingOAuth.firstWhere(
           (s) => s.url == pendingState.resourceUrl,
-          orElse: () => serversNeedingOAuth.firstWhere(
-            (s) => s.url == pendingState.resourceUrl,
-          ),
-        );
-      }
+        ),
+      );
 
       await completeServerOAuth(server, tokens, mcpServers);
     } catch (e) {
@@ -258,8 +271,25 @@ class McpOAuthManager extends ChangeNotifier {
     serverOAuthStatus[server.id] = McpOAuthCardStatus.completed;
     notifyListeners();
 
-    // Re-initialize the server with the new tokens
-    await onReinitializeServer?.call(updatedServer);
+    // Remove from the pending list BEFORE re-initializing.  This is intentional:
+    // if re-initialization itself triggers an auth error (e.g. the new tokens are
+    // rejected), McpServerManager will call handleServerNeedsOAuth again, which
+    // checks !serversNeedingOAuth.any(...). By removing here we allow that call to
+    // re-add the server with a fresh pending status and re-show the OAuth banner.
+    serversNeedingOAuth.removeWhere((s) => s.id == server.id);
+
+    try {
+      // Re-initialize the server with the new tokens
+      await onReinitializeServer?.call(updatedServer);
+    } finally {
+      // Always clear the completed status so the state is fully reset.
+      // On success: leaves a clean slate so future disconnects can re-trigger OAuth.
+      // On failure: re-initialization internally calls handleServerNeedsOAuth which
+      // re-adds the server with pending status; removing completed here avoids a
+      // stale status conflicting with that new pending entry.
+      serverOAuthStatus.remove(server.id);
+      notifyListeners();
+    }
   }
 
   /// Start OAuth flow for a specific server

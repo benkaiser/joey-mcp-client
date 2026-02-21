@@ -613,6 +613,9 @@ class _ChatScreenState extends State<ChatScreen>
   Future<void> _regenerateLastResponse(ConversationProvider provider) async {
     if (_isLoading) return;
 
+    // Capture context-dependent service before any async gaps
+    final openRouterService = context.read<OpenRouterService>();
+
     final messages = provider.getMessages(widget.conversation.id);
     if (messages.isEmpty) return;
 
@@ -646,8 +649,6 @@ class _ChatScreenState extends State<ChatScreen>
     });
 
     try {
-      final openRouterService = context.read<OpenRouterService>();
-
       // Initialize ChatService if needed
       if (_chatService == null) {
         _chatService = ChatService(

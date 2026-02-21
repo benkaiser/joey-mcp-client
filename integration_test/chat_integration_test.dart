@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:provider/provider.dart';
-import 'package:joey_mcp_client_flutter/main.dart' as app;
 import 'package:joey_mcp_client_flutter/models/conversation.dart';
 import 'package:joey_mcp_client_flutter/models/message.dart';
 import 'package:joey_mcp_client_flutter/providers/conversation_provider.dart';
 import 'package:joey_mcp_client_flutter/services/openrouter_service.dart';
 import 'package:joey_mcp_client_flutter/services/database_service.dart';
 import 'package:joey_mcp_client_flutter/services/chat_service.dart';
-import 'package:joey_mcp_client_flutter/screens/chat_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:dio/dio.dart';
 
@@ -116,11 +114,8 @@ class MockOpenRouterService extends OpenRouterService {
     // Stream the response in chunks to simulate streaming
     // Yield each chunk separately (like real streaming)
     final words = mockResponse.split(' ');
-    String accumulated = '';
     for (int i = 0; i < words.length; i++) {
       await Future.delayed(const Duration(milliseconds: 10));
-      if (i > 0) accumulated += ' ';
-      accumulated += words[i];
       yield words[i] + (i < words.length - 1 ? ' ' : '');
     }
   }

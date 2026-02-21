@@ -6,7 +6,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:provider/provider.dart';
 import 'package:joey_mcp_client_flutter/models/conversation.dart';
 import 'package:joey_mcp_client_flutter/models/message.dart';
-import 'package:joey_mcp_client_flutter/models/mcp_server.dart';
 import 'package:joey_mcp_client_flutter/providers/conversation_provider.dart';
 import 'package:joey_mcp_client_flutter/services/openrouter_service.dart';
 import 'package:joey_mcp_client_flutter/services/database_service.dart';
@@ -31,11 +30,11 @@ class MockMcpClientService extends McpClientService {
   MockMcpClientService({
     required this.serverId,
     required this.mockTools,
-    required String serverUrl,
-  }) : super(serverUrl: serverUrl);
+    required super.serverUrl,
+  });
 
   @override
-  Future<void> initialize() async {
+  Future<void> initialize({String? sessionId}) async {
     await Future.delayed(const Duration(milliseconds: 50));
     _isInitialized = true;
   }
@@ -145,7 +144,7 @@ class MockMcpClientService extends McpClientService {
 
 /// Mock OpenRouter Service for MCP tests
 class MockOpenRouterServiceForMcp extends OpenRouterService {
-  bool _isAuthenticated = true;
+  final bool _isAuthenticated = true;
   String mockResponse = "AI response to tool usage";
   String mockSamplingResponse = "Mock response from sampling request";
   int _callCount = 0;
@@ -442,33 +441,6 @@ void main() {
       );
 
       // Manually trigger a tool call to server2's tool
-      final conversation = Conversation(
-        id: const Uuid().v4(),
-        title: 'Test',
-        model: 'anthropic/claude-3-5-sonnet',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      final userMessage = Message(
-        id: const Uuid().v4(),
-        conversationId: conversation.id,
-        role: MessageRole.user,
-        content: 'Read the file',
-        timestamp: DateTime.now(),
-      );
-
-      // Create a tool call for read-file
-      final toolCalls = [
-        {
-          'id': 'call_1',
-          'function': {
-            'name': 'read-file',
-            'arguments': '{"path": "/test.txt"}',
-          },
-        },
-      ];
-
       // Execute the tool calls using the internal method
       // We'll simulate this by calling the tool directly
       await mockMcpClient2.callTool('read-file', {'path': '/test.txt'});
@@ -663,7 +635,7 @@ class _TestMcpChatScreenState extends State<_TestMcpChatScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   ChatService? _chatService;
-  Map<String, List<McpTool>> _mcpTools = {};
+  final Map<String, List<McpTool>> _mcpTools = {};
 
   @override
   void initState() {
@@ -680,14 +652,19 @@ class _TestMcpChatScreenState extends State<_TestMcpChatScreen> {
       updatedAt: DateTime.now(),
     );
 
+    // Capture context-dependent service before any async gaps
+    final openRouterService = context.read<OpenRouterService>();
+    if (!mounted) return;
+
     // Load tools from all MCP clients
     for (final entry in widget.mcpClients.entries) {
       final tools = await entry.value.listTools();
       _mcpTools[entry.key] = tools;
     }
 
+    if (!mounted) return;
+
     // Initialize chat service with MCP clients
-    final openRouterService = context.read<OpenRouterService>();
     _chatService = ChatService(
       openRouterService: openRouterService,
       mcpClients: widget.mcpClients,

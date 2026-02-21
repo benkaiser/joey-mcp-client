@@ -292,6 +292,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             }
           } else {
             // No default model — show model picker first
+            if (!context.mounted) return;
             selectedModel = await Navigator.push<String>(
               context,
               MaterialPageRoute(

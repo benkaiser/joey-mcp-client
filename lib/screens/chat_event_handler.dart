@@ -229,7 +229,7 @@ mixin ChatEventHandlerMixin on State<ChatScreen> {
             // Return the response to the MCP server
             event.onApprove(approvedRequest, response);
           } catch (e) {
-            if (mounted) {
+            if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Sampling error: ${e.toString()}'),

@@ -109,6 +109,7 @@ class _McpServersScreenState extends State<McpServersScreen> {
       }
     }
 
+    if (!mounted) return;
     final result = await showDialog<McpServer>(
       context: context,
       builder: (context) => _McpServerDialog(server: server),
@@ -456,8 +457,8 @@ class _McpServerDialogState extends State<_McpServerDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                color: Colors.orange.withValues(alpha: 0.1),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
