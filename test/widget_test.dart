@@ -10,12 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:joey_mcp_client_flutter/main.dart';
 
 void main() {
-  testWidgets('App launches and shows conversation list', (WidgetTester tester) async {
+  testWidgets('App launches and shows auth screen when not authenticated', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
+    // Wait for the auth check FutureBuilder to resolve.
+    await tester.pumpAndSettle();
 
-    // Verify that the app shows the conversation list screen
-    expect(find.text('Joey MCP Client'), findsOneWidget);
-    expect(find.text('No conversations yet'), findsOneWidget);
+    // In a test environment SharedPreferences has no stored API key,
+    // so the app should show the authentication screen.
+    expect(find.text('Welcome to Joey'), findsOneWidget);
   });
 }
