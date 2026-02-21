@@ -174,7 +174,8 @@ class MessageInput extends StatelessWidget {
                           vertical: 12,
                         ),
                       ),
-                      maxLines: null,
+                      minLines: 1,
+                      maxLines: 4,
                       textInputAction: TextInputAction.newline,
                       contentInsertionConfiguration:
                           ContentInsertionConfiguration(
