@@ -441,14 +441,6 @@ void main() {
       );
 
       // Manually trigger a tool call to server2's tool
-      final conversation = Conversation(
-        id: const Uuid().v4(),
-        title: 'Test',
-        model: 'anthropic/claude-3-5-sonnet',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
       // Execute the tool calls using the internal method
       // We'll simulate this by calling the tool directly
       await mockMcpClient2.callTool('read-file', {'path': '/test.txt'});
@@ -660,15 +652,19 @@ class _TestMcpChatScreenState extends State<_TestMcpChatScreen> {
       updatedAt: DateTime.now(),
     );
 
+    // Capture context-dependent service before any async gaps
+    final openRouterService = context.read<OpenRouterService>();
+    if (!mounted) return;
+
     // Load tools from all MCP clients
     for (final entry in widget.mcpClients.entries) {
       final tools = await entry.value.listTools();
       _mcpTools[entry.key] = tools;
     }
 
+    if (!mounted) return;
+
     // Initialize chat service with MCP clients
-    if (!context.mounted) return;
-    final openRouterService = context.read<OpenRouterService>();
     _chatService = ChatService(
       openRouterService: openRouterService,
       mcpClients: widget.mcpClients,

@@ -44,13 +44,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadDefaultModel() async {
+    // Capture context-dependent service before any async gaps
+    final openRouterService = context.read<OpenRouterService>();
     final defaultModel = await DefaultModelService.getDefaultModel();
 
     if (defaultModel != null) {
       // Fetch model details
       try {
-        if (!context.mounted) return;
-        final openRouterService = context.read<OpenRouterService>();
         final models = await openRouterService.getModels();
         final modelDetails = models.firstWhere(
           (m) => m['id'] == defaultModel,
