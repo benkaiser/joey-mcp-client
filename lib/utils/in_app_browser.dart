@@ -65,6 +65,8 @@ Future<Uri> launchAuthSession(
   final result = await FlutterWebAuth2.authenticate(
     url: uri.toString(),
     callbackUrlScheme: callbackUrlScheme,
+    options: const FlutterWebAuth2Options(),
   );
+  await closeInAppBrowser();
   return Uri.parse(result);
 }

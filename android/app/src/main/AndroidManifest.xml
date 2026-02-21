@@ -26,43 +26,17 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link for OAuth callback - custom scheme -->
-            <intent-filter>
+        </activity>
+        <!-- flutter_web_auth_2 CallbackActivity for OAuth redirects -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter android:label="flutter_web_auth_2">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="joey"
-                    android:host="auth" />
-            </intent-filter>
-            <!-- Deep link for MCP OAuth callback - custom scheme -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="joey"
-                    android:host="mcp-oauth" />
-            </intent-filter>
-            <!-- Deep link for OAuth callback - HTTPS URL -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="openrouterauth.benkaiser.dev"
-                    android:path="/api/auth" />
-            </intent-filter>
-            <!-- Deep link for MCP OAuth callback - HTTPS URL -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="openrouterauth.benkaiser.dev"
-                    android:path="/api/mcp-oauth" />
+                <data android:scheme="joey" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
