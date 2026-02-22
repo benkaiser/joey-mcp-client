@@ -7,7 +7,7 @@
 
 ### Tech Stack
 - **Flutter** (iOS, Android, macOS, Windows, Linux) — Dart SDK ^3.10.7
-- **State**: Provider — **DB**: sqflite (schema v14) — **HTTP**: Dio
+- **State**: Provider — **DB**: sqflite (schema v15) — **HTTP**: Dio
 - **LLM**: OpenRouter (PKCE OAuth, SSE streaming) — **MCP**: `mcp_dart` (Streamable HTTP)
 
 ## Architecture
@@ -24,7 +24,7 @@ User input → ChatScreen._sendMessage()
 ### ChatScreen Composition
 `ChatScreen` uses two mixins and three delegate classes:
 - **ChatEventHandlerMixin** (`screens/chat_event_handler.dart`) — maps `ChatEvent`s to UI state
-- **ConversationActionsMixin** (`screens/conversation_actions.dart`) — share, rename, model switch, title gen
+- **ConversationActionsMixin** (`screens/conversation_actions.dart`) — share, rename, model switch, title gen, JSON export
 - **McpServerManager** (`services/mcp_server_manager.dart`) — MCP server lifecycle + session resumption
 - **McpOAuthManager** (`services/mcp_oauth_manager.dart`) — OAuth flows for MCP servers
 - **ImageAttachmentHandler** (`utils/image_attachment_handler.dart`) — image picking + clipboard paste
@@ -37,6 +37,7 @@ Rendering is delegated to `MessageList` (widget) and `MessageInput` (widget).
 - **McpClientService** (`services/mcp_client_service.dart`) — wraps `mcp_dart`: connect, call tools, session resumption, OAuth token injection, sampling/elicitation callbacks
 - **OpenRouterService** (`services/openrouter_service.dart`) — OAuth PKCE, chat completion, streaming, model listing
 - **DatabaseService** (`services/database_service.dart`) — SQLite tables: `conversations`, `messages`, `mcp_servers`, `conversation_mcp_servers`, `mcp_sessions`
+- **ConversationImportExportService** (`services/conversation_import_export_service.dart`) — JSON backup export/import for conversations and messages
 
 ### Message Roles (`models/message.dart`)
 `MessageRole` enum: `user`, `assistant`, `system`, `tool`, `elicitation` (local-only), `mcpNotification` (sent as context), `modelChange` (local-only). `toApiMessage()` returns null for local-only roles.
@@ -60,3 +61,4 @@ Rendering is delegated to `MessageList` (widget) and `MessageInput` (widget).
 - Streaming chunks use special prefixes: `TOOL_CALLS:` for tool calls, `REASONING:` for thinking content
 - MCP session IDs are persisted per conversation+server and used for session resumption
 - OpenRouter API key is stored in SharedPreferences (PKCE OAuth flow)
+- **DB migrations affect import/export**: The JSON export format uses `toMap()`/`fromMap()` from the models, which mirror the DB schema. When adding new columns via a migration: (1) keep new model fields nullable so `fromMap()` tolerates older exports missing the key, (2) if a new field is required, bump the export envelope version in `ConversationImportExportService` and handle the old version gracefully, (3) update the schema version number in this file
