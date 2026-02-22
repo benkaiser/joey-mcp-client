@@ -1,5 +1,7 @@
 # Joey MCP Client
 
+![Joey MCP Client Feature Graphic](metadata/en-US/images/featureGraphic.png)
+
 A cross-platform chat application built with Flutter that connects to AI models via [OpenRouter](https://openrouter.ai/) and remote [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers over Streamable HTTP.
 
 ## Key Features
