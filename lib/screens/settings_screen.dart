@@ -1,8 +1,14 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
+import '../services/conversation_import_export_service.dart';
 import '../utils/in_app_browser.dart';
 import '../utils/privacy_constants.dart';
 import 'model_picker_screen.dart';
@@ -254,6 +260,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.blue),
+              title: const Text('Export All Conversations'),
+              subtitle: const Text('Save all conversations as a JSON backup'),
+              onTap: () => _exportAllConversations(),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const Icon(Icons.download, color: Colors.green),
+              title: const Text('Import Conversations'),
+              subtitle: const Text('Restore conversations from a JSON backup'),
+              onTap: () => _importConversations(),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
               leading: const Icon(Icons.delete_forever, color: Colors.red),
               title: const Text('Delete All Conversations'),
               subtitle: const Text('This action cannot be undone'),
@@ -295,6 +319,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _exportAllConversations() async {
+    final provider = context.read<ConversationProvider>();
+
+    if (provider.conversations.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No conversations to export')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final jsonString =
+          await ConversationImportExportService.exportAllConversations(provider);
+
+      final isDesktop = !kIsWeb &&
+          (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+      if (isDesktop) {
+        final result = await FilePicker.platform.saveFile(
+          dialogTitle: 'Export All Conversations',
+          fileName: 'joey-conversations-export.json',
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (result != null) {
+          await File(result).writeAsString(jsonString);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Exported ${provider.conversations.length} conversations',
+                ),
+              ),
+            );
+          }
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final tempFile =
+            File('${tempDir.path}/joey-conversations-export.json');
+        await tempFile.writeAsString(jsonString);
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(tempFile.path)]),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to export: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _importConversations() async {
+    // Capture provider before async gap
+    final provider = context.read<ConversationProvider>();
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      if (file.path == null) return;
+
+      final jsonString = await File(file.path!).readAsString();
+
+      final importResult =
+          await ConversationImportExportService.importConversations(
+        jsonString,
+        provider,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported ${importResult.imported} conversation${importResult.imported == 1 ? '' : 's'}'
+              '${importResult.skipped > 0 ? ', ${importResult.skipped} skipped' : ''}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showLogoutDialog() {

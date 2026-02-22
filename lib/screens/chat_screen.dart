@@ -869,10 +869,36 @@ class _ChatScreenState extends State<ChatScreen>
                   });
                 },
               ),
-              IconButton(
+              PopupMenuButton<String>(
                 icon: const Icon(Icons.share),
-                tooltip: 'Share conversation',
-                onPressed: () => shareConversation(),
+                tooltip: 'Share / Export',
+                onSelected: (value) {
+                  if (value == 'share_text') {
+                    shareConversation();
+                  } else if (value == 'export_json') {
+                    exportConversationAsJson();
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'share_text',
+                    child: ListTile(
+                      leading: Icon(Icons.text_snippet),
+                      title: Text('Share as Text'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'export_json',
+                    child: ListTile(
+                      leading: Icon(Icons.download),
+                      title: Text('Export as JSON'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
               IconButton(
                 icon: const Icon(Icons.note_add),

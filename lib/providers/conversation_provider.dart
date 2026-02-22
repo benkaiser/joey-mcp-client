@@ -55,6 +55,16 @@ class ConversationProvider extends ChangeNotifier {
     return conversation;
   }
 
+  /// Import a conversation directly (used by import/export).
+  /// Unlike createConversation, this preserves the conversation's existing fields.
+  Future<void> importConversation(Conversation conversation) async {
+    _conversations.insert(0, conversation);
+    _messages[conversation.id] = [];
+
+    await _db.insertConversation(conversation);
+    notifyListeners();
+  }
+
   Future<void> deleteConversation(String id) async {
     _conversations.removeWhere((c) => c.id == id);
     _messages.remove(id);

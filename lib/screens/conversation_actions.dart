@@ -5,12 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/database_service.dart';
+import '../services/conversation_import_export_service.dart';
 import '../widgets/rename_dialog.dart';
 import 'chat_screen.dart';
 import 'model_picker_screen.dart';
@@ -57,6 +60,79 @@ mixin ConversationActionsMixin on State<ChatScreen> {
     } else {
       await SharePlus.instance.share(ShareParams(text: markdown));
     }
+  }
+
+  Future<void> exportConversationAsJson() async {
+    final provider = context.read<ConversationProvider>();
+    final messages = provider.getMessages(widget.conversation.id);
+
+    if (messages.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No messages to export')),
+        );
+      }
+      return;
+    }
+
+    final conversation = provider.conversations.firstWhere(
+      (c) => c.id == widget.conversation.id,
+    );
+
+    final jsonString = ConversationImportExportService.exportSingleConversation(
+      conversation,
+      messages,
+    );
+
+    final isDesktop = !kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+    try {
+      if (isDesktop) {
+        // On desktop, use file_picker to save file
+        final result = await FilePicker.platform.saveFile(
+          dialogTitle: 'Export Conversation',
+          fileName: '${_sanitizeFileName(conversation.title)}.json',
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (result != null) {
+          await File(result).writeAsString(jsonString);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Conversation exported')),
+            );
+          }
+        }
+      } else {
+        // On mobile, write to temp file and share
+        final tempDir = await getTemporaryDirectory();
+        final fileName = '${_sanitizeFileName(conversation.title)}.json';
+        final tempFile = File('${tempDir.path}/$fileName');
+        await tempFile.writeAsString(jsonString);
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(tempFile.path)],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to export: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _sanitizeFileName(String name) {
+    return name
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .toLowerCase();
   }
 
   String _conversationToMarkdown(
