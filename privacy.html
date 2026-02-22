@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Joey MCP Client</title>
+  <meta name="description" content="Privacy policy for Joey MCP Client by Kaiserapps. Your data stays on your device.">
+  <link rel="icon" type="image/png" href="images/app-icon.png">
+  <style>
+    :root {
+      --bg-primary: #0a0f1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a2332;
+      --accent: #2dd4bf;
+      --accent-dim: rgba(45, 212, 191, 0.15);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: #1e293b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    /* ── Navigation ── */
+    nav {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 100;
+      background: rgba(10, 15, 26, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.25rem;
+    }
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+    .nav-links { display: flex; gap: 32px; list-style: none; }
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--accent); }
+
+    /* ── Content ── */
+    .content {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 120px 24px 80px;
+    }
+    .content h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .last-updated {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .content h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 48px;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+    }
+    .content h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 32px;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+    .content p {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      font-size: 1rem;
+      line-height: 1.8;
+    }
+    .content ul {
+      list-style: none;
+      margin-bottom: 16px;
+      padding-left: 0;
+    }
+    .content ul li {
+      position: relative;
+      padding-left: 24px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+    .content ul li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 10px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.6;
+    }
+    .content strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .content a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .content a:hover { text-decoration: underline; }
+    .content ol {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+    .content ol li {
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 24px;
+      text-align: center;
+    }
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-copy {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 480px) {
+      .content { padding: 100px 16px 60px; }
+      .content h1 { font-size: 1.75rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">
+        <img src="images/app-icon.png" alt="Joey icon">
+        Joey
+      </a>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="https://github.com/benkaiser/joey-mcp-client" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Privacy Policy Content -->
+  <div class="content">
+    <h1>Privacy Policy</h1>
+    <p class="last-updated">Last Updated: February 10, 2026</p>
+
+    <h2>Overview</h2>
+    <p>Joey MCP Client (operated by Kaiserapps) is designed with a privacy-first approach. Your conversation data stays on your device and is only transmitted to the services you explicitly configure. This document describes how your data is handled.</p>
+
+    <h2>Data Storage</h2>
+    <p>All conversation data — including messages, attachments, and conversation metadata — is stored <strong>locally on your device</strong> using SQLite. Joey MCP Client does not operate any backend servers that store your conversations. If you delete the app or clear its data, your conversations are permanently removed.</p>
+
+    <h3>What is stored locally</h3>
+    <ul>
+      <li>Conversation history (messages, tool calls, responses)</li>
+      <li>MCP server configurations</li>
+      <li>OpenRouter authentication credentials</li>
+      <li>User preferences and settings</li>
+    </ul>
+
+    <h2>Data Transmission</h2>
+    <p>Joey MCP Client only transmits your data in two scenarios, both of which are initiated by your direct use of the app:</p>
+
+    <h3>1. OpenRouter (LLM Processing)</h3>
+    <p>When you send a message in a conversation, the relevant conversation context is transmitted to <a href="https://openrouter.ai" target="_blank">OpenRouter</a> for LLM (Large Language Model) processing. This is required to generate AI responses. <a href="https://openrouter.ai/privacy" target="_blank">OpenRouter's privacy policy</a> governs how they handle data sent to their API.</p>
+    <ul>
+      <li><strong>What is sent:</strong> Conversation messages and context necessary for generating a response</li>
+      <li><strong>Why:</strong> To process your messages through the AI model you have selected</li>
+      <li><strong>When:</strong> Only when you actively send a message in a conversation</li>
+    </ul>
+
+    <h3>2. MCP Servers (Tool Execution)</h3>
+    <p>When the AI model invokes a tool provided by an MCP server you have connected, the relevant tool command is sent to that MCP server for execution. The responses from MCP servers are stored locally on your device and may be included in subsequent messages to OpenRouter as part of the conversation context.</p>
+    <ul>
+      <li><strong>What is sent:</strong> Tool invocation commands as determined by the AI model and approved by you</li>
+      <li><strong>Why:</strong> To execute tool calls on MCP servers you have configured</li>
+      <li><strong>When:</strong> Only when a tool call is triggered during a conversation with a connected MCP server</li>
+    </ul>
+
+    <h2>Third-Party Data Sharing</h2>
+    <p>Joey MCP Client (operated by Kaiserapps) <strong>does not transmit your conversation data to any third parties</strong> outside of the two uses described above:</p>
+    <ol>
+      <li><strong>OpenRouter</strong> — for LLM processing</li>
+      <li><strong>User-configured MCP servers</strong> — for tool execution</li>
+    </ol>
+    <p>No conversation data is sold, shared with advertisers, or sent to analytics services. No data is collected by Kaiserapps beyond what is described in this policy.</p>
+
+    <h2>MCP Server Privacy</h2>
+    <p>MCP servers are configured entirely by you, the user. Joey MCP Client connects only to MCP servers that you explicitly add. Each MCP server is operated by its own provider and is subject to its own privacy practices. Kaiserapps is not responsible for the data handling practices of third-party MCP servers you choose to connect.</p>
+
+    <h2>Data Security</h2>
+    <ul>
+      <li>OpenRouter authentication uses OAuth 2.0 with PKCE for secure credential exchange</li>
+      <li>MCP server connections support OAuth 2.1 with PKCE where supported by the server</li>
+      <li>All network communication uses HTTPS</li>
+      <li>Authentication tokens are stored locally on device</li>
+    </ul>
+
+    <h2>Your Control</h2>
+    <p>You have full control over your data at all times:</p>
+    <ul>
+      <li><strong>Delete conversations</strong> — Remove any conversation and its messages from local storage</li>
+      <li><strong>Disconnect MCP servers</strong> — Remove any MCP server configuration to stop all communication with it</li>
+      <li><strong>Log out of OpenRouter</strong> — Clear your OpenRouter credentials to stop all LLM communication</li>
+      <li><strong>Uninstall the app</strong> — Removes all locally stored data permanently</li>
+    </ul>
+
+    <h2>Changes to This Policy</h2>
+    <p>Any changes to this privacy policy will be reflected in updated versions of the app. We encourage you to review this policy periodically.</p>
+
+    <h2>Contact</h2>
+    <p>If you have questions about this privacy policy, please contact Kaiserapps through the app's official channels.</p>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="https://github.com/benkaiser/joey-mcp-client" target="_blank">GitHub</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+      </ul>
+      <p class="footer-copy">&copy; 2025 Kaiserapps. Licensed under <a href="https://github.com/benkaiser/joey-mcp-client/blob/main/LICENSE" target="_blank" style="color: var(--text-muted); text-decoration: underline;">FSL-1.1-MIT</a>.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joey — AI Chat with MCP Tool Use</title>
+  <meta name="description" content="A cross-platform chat app that connects to AI models via OpenRouter and remote MCP servers. Full tool calling, sampling, elicitation, and OAuth support.">
+  <meta property="og:title" content="Joey — AI Chat with MCP Tool Use">
+  <meta property="og:description" content="Connect to hundreds of AI models and remote MCP servers. Full tool calling, image attachments, and cross-platform support.">
+  <meta property="og:image" content="images/featureGraphic.png">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" href="images/app-icon.png">
+  <style>
+    :root {
+      --bg-primary: #0a0f1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a2332;
+      --accent: #2dd4bf;
+      --accent-dim: rgba(45, 212, 191, 0.15);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: #1e293b;
+      --gradient-start: #0d9488;
+      --gradient-end: #2dd4bf;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Navigation ── */
+    nav {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 100;
+      background: rgba(10, 15, 26, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.25rem;
+    }
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+    .nav-links { display: flex; gap: 32px; list-style: none; }
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--accent); }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 160px 24px 80px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(45, 212, 191, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      border-radius: 100px;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+      color: #0a0f1a;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(45, 212, 191, 0.3); }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn svg { width: 20px; height: 20px; }
+
+    /* ── Store badges ── */
+    .store-badges {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .store-badge {
+      height: 50px;
+      border-radius: 10px;
+      transition: transform 0.2s;
+    }
+    .store-badge:hover { transform: translateY(-2px); }
+
+    /* ── iPhone Frame ── */
+    .iphone-frame {
+      position: relative;
+      width: 280px;
+      flex-shrink: 0;
+    }
+    .iphone-frame .frame-shell {
+      position: relative;
+      background: #1a1a1a;
+      border-radius: 44px;
+      padding: 14px;
+      box-shadow:
+        0 0 0 2px #333,
+        0 25px 60px rgba(0, 0, 0, 0.5),
+        0 0 80px rgba(45, 212, 191, 0.05);
+    }
+    .iphone-frame .frame-shell::before {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100px;
+      height: 28px;
+      background: #0a0a0a;
+      border-radius: 0 0 18px 18px;
+      z-index: 2;
+    }
+    .iphone-frame .screen {
+      border-radius: 32px;
+      overflow: hidden;
+      position: relative;
+      background: #000;
+    }
+    .iphone-frame .screen img {
+      width: 100%;
+      display: block;
+    }
+
+    /* ── Screenshot showcase (hero) ── */
+    .hero-screenshots {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 64px;
+      perspective: 1200px;
+    }
+    .hero-screenshots .iphone-frame:nth-child(1) { transform: rotateY(8deg) scale(0.92); }
+    .hero-screenshots .iphone-frame:nth-child(2) { transform: scale(1.02); z-index: 2; }
+    .hero-screenshots .iphone-frame:nth-child(3) { transform: rotateY(-8deg) scale(0.92); }
+
+    /* ── Section ── */
+    section {
+      padding: 100px 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      margin-bottom: 16px;
+      letter-spacing: -0.01em;
+    }
+    .section-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      line-height: 1.7;
+    }
+
+    /* ── Feature Grid ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      transition: all 0.3s;
+    }
+    .feature-card:hover {
+      border-color: rgba(45, 212, 191, 0.3);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--accent-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+    .feature-card h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* ── Feature Row (alternating image + text) ── */
+    .feature-row {
+      display: flex;
+      align-items: center;
+      gap: 80px;
+      padding: 80px 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .feature-row.reverse { flex-direction: row-reverse; }
+    .feature-row .text-side { flex: 1; }
+    .feature-row .phone-side { flex: 0 0 auto; }
+    .feature-row .feature-list {
+      list-style: none;
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .feature-row .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .feature-row .feature-list li .check {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ── Platform Section ── */
+    .platforms {
+      text-align: center;
+    }
+    .platform-icons {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-top: 48px;
+      flex-wrap: wrap;
+    }
+    .platform-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .platform-item .icon-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
+    }
+    .platform-item .icon-circle:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+    .platform-item .icon-circle svg { width: 32px; height: 32px; fill: var(--text-secondary); }
+    .platform-item span {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ── CTA section ── */
+    .cta-section {
+      text-align: center;
+      padding: 100px 24px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .cta-section h2 {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .cta-section p {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      margin-bottom: 32px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 24px;
+      text-align: center;
+    }
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-copy {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .hero-screenshots { gap: 16px; }
+      .hero-screenshots .iphone-frame { width: 200px; }
+      .hero-screenshots .iphone-frame:nth-child(1),
+      .hero-screenshots .iphone-frame:nth-child(3) { display: none; }
+      .hero-screenshots .iphone-frame:nth-child(2) { transform: scale(1); }
+      .feature-row { flex-direction: column !important; gap: 48px; text-align: center; }
+      .feature-row .feature-list { align-items: center; }
+      .iphone-frame { width: 240px; }
+      .nav-links { display: none; }
+    }
+
+    @media (max-width: 480px) {
+      .hero { padding: 120px 16px 60px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .platform-icons { gap: 24px; }
+      .hero-buttons { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">
+        <img src="images/app-icon.png" alt="Joey icon">
+        Joey
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#mcp">MCP</a></li>
+        <li><a href="#platforms">Platforms</a></li>
+        <li><a href="https://github.com/benkaiser/joey-mcp-client" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+      Open Source &middot; Cross-Platform
+    </div>
+    <h1>AI Chat with<br><span class="gradient">MCP Tool Use</span></h1>
+    <p>Connect to hundreds of AI models via OpenRouter and supercharge them with remote MCP servers. Tool calling, sampling, elicitation, OAuth — all built in.</p>
+    <div class="hero-buttons">
+      <a href="https://github.com/benkaiser/joey-mcp-client" class="btn btn-primary" target="_blank">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#features" class="btn btn-secondary">Explore Features</a>
+    </div>
+
+    <div class="store-badges">
+      <a href="https://apps.apple.com/app/joey-mcp-client/id6745056920" target="_blank">
+        <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" class="store-badge">
+      </a>
+      <a href="https://play.google.com/store/apps/details?id=com.kaiserapps.joey" target="_blank">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Get it on Google Play" class="store-badge">
+      </a>
+    </div>
+
+    <!-- Hero phone showcase -->
+    <div class="hero-screenshots">
+      <div class="iphone-frame">
+        <div class="frame-shell">
+          <div class="screen">
+            <img src="images/4_chat_recipe_search.png" alt="Recipe search with MCP tools" loading="lazy">
+          </div>
+        </div>
+      </div>
+      <div class="iphone-frame">
+        <div class="frame-shell">
+          <div class="screen">
+            <img src="images/1_conversation_list.png" alt="Joey conversation list" loading="lazy">
+          </div>
+        </div>
+      </div>
+      <div class="iphone-frame">
+        <div class="frame-shell">
+          <div class="screen">
+            <img src="images/2_chat_nutrition_tracking.png" alt="Nutrition tracking with MCP" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Features Grid -->
+  <section id="features">
+    <span class="section-label">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z"/></svg>
+      Features
+    </span>
+    <h2 class="section-title">Everything you need in an AI chat client</h2>
+    <p class="section-subtitle">Joey combines powerful AI model access with the full MCP protocol, giving you a native chat app that can actually do things.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔌</div>
+        <h3>Full MCP Support</h3>
+        <p>Connect to remote MCP servers with tool calling, sampling, elicitation, OAuth, session resumption, and progress notifications.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>Hundreds of AI Models</h3>
+        <p>Access any model on OpenRouter — GPT-4o, Claude, Gemini, Llama, and more. Switch models mid-conversation and track usage costs.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔄</div>
+        <h3>Agentic Tool Use</h3>
+        <p>Automatic agentic loop that executes MCP tools and feeds results back to the LLM until the task is complete.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📎</div>
+        <h3>Image &amp; Audio Attachments</h3>
+        <p>Attach images from gallery, camera, or clipboard. Record audio inline. View media returned by MCP tools with pinch-to-zoom.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>Rich Chat Experience</h3>
+        <p>Streaming responses, markdown rendering with code blocks and Mermaid diagrams, message editing, regeneration, and full-text search.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Privacy First</h3>
+        <p>All data stored locally on-device. No backend servers, no analytics. Your conversations only go to the services you explicitly configure.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- MCP Deep Dive -->
+  <div id="mcp">
+    <div class="feature-row">
+      <div class="text-side">
+        <span class="section-label">MCP Protocol</span>
+        <h2 class="section-title">Connect AI to your tools</h2>
+        <p class="section-subtitle">Joey implements the full Model Context Protocol, letting AI models interact with any remote MCP server you connect.</p>
+        <ul class="feature-list">
+          <li><span class="check">✓</span> Use tools from multiple MCP servers simultaneously</li>
+          <li><span class="check">✓</span> Browse and use server-provided prompt templates</li>
+          <li><span class="check">✓</span> Session resumption across app restarts</li>
+          <li><span class="check">✓</span> OAuth support for authenticated servers</li>
+          <li><span class="check">✓</span> Real-time progress notifications</li>
+          <li><span class="check">✓</span> Debug screen for inspecting tool schemas</li>
+        </ul>
+      </div>
+      <div class="phone-side">
+        <div class="iphone-frame">
+          <div class="frame-shell">
+            <div class="screen">
+              <img src="images/3_chat_habit_tracking.png" alt="Habit tracking via MCP tools" loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row reverse">
+      <div class="text-side">
+        <span class="section-label">AI Models</span>
+        <h2 class="section-title">Pick the right model for every task</h2>
+        <p class="section-subtitle">Access the full OpenRouter catalog with a powerful model picker. Switch models mid-conversation and see exactly what each message costs.</p>
+        <ul class="feature-list">
+          <li><span class="check">✓</span> Search, filter by modality, sort by price or context</li>
+          <li><span class="check">✓</span> Switch models mid-conversation with visual indicators</li>
+          <li><span class="check">✓</span> Per-message token counts and cost breakdowns</li>
+          <li><span class="check">✓</span> Set a default model for new conversations</li>
+          <li><span class="check">✓</span> Reasoning token display for thinking models</li>
+        </ul>
+      </div>
+      <div class="phone-side">
+        <div class="iphone-frame">
+          <div class="frame-shell">
+            <div class="screen">
+              <img src="images/6_chat_image_analysis.png" alt="Image analysis with AI" loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="text-side">
+        <span class="section-label">Rich Content</span>
+        <h2 class="section-title">More than just text</h2>
+        <p class="section-subtitle">Joey renders rich content from AI responses and MCP tools — diagrams, tables, images, code blocks, and more.</p>
+        <ul class="feature-list">
+          <li><span class="check">✓</span> Mermaid diagram rendering</li>
+          <li><span class="check">✓</span> Syntax-highlighted code blocks</li>
+          <li><span class="check">✓</span> Inline image and audio display from tools</li>
+          <li><span class="check">✓</span> Rich markdown tables</li>
+          <li><span class="check">✓</span> Full-screen image viewer with pinch-to-zoom</li>
+        </ul>
+      </div>
+      <div class="phone-side">
+        <div class="iphone-frame">
+          <div class="frame-shell">
+            <div class="screen">
+              <img src="images/5_chat_mermaid_diagram.png" alt="Mermaid diagram rendering" loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Platforms -->
+  <section id="platforms" class="platforms">
+    <span class="section-label">Cross-Platform</span>
+    <h2 class="section-title">Runs everywhere</h2>
+    <p class="section-subtitle" style="margin: 0 auto;">Built with Flutter for native performance on every platform.</p>
+
+    <div class="platform-icons">
+      <div class="platform-item">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        </div>
+        <span>iOS</span>
+      </div>
+      <div class="platform-item">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M17.523 15.34a.5.5 0 0 0-.172-.044c-.164-.044-.329-.044-.494-.044-.659 0-1.274.263-1.714.725l-1.318 1.45a.25.25 0 0 1-.35.025l-.044-.044L7.7 11.677a.25.25 0 0 1 0-.35l1.318-1.45c.44-.462.659-1.1.615-1.758-.044-.659-.35-1.274-.834-1.714L5.456 3.22C4.688 2.539 3.482 2.583 2.758 3.33L1.44 4.736C.672 5.57.32 6.668.452 7.766c.44 3.606 2.154 7.08 4.836 9.828 2.682 2.748 6.09 4.55 9.652 5.1.132.022.263.022.395.022 1.01 0 1.977-.418 2.682-1.143l1.318-1.45c.769-.813.725-2.088-.088-2.858z"/><path d="M13.26 1.88a.75.75 0 0 0-.53 1.28c2.5 2.5 2.5 6.56 0 9.06a.75.75 0 1 0 1.06 1.06c3.08-3.08 3.08-8.1 0-11.18a.75.75 0 0 0-.53-.22z"/><path d="M16.08 0a.75.75 0 0 0-.53 1.28c4.01 4.01 4.01 10.54 0 14.56a.75.75 0 1 0 1.06 1.06c4.6-4.6 4.6-12.08 0-16.68A.75.75 0 0 0 16.08 0z"/></svg>
+        </div>
+        <span>Android</span>
+      </div>
+      <div class="platform-item">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M22 17.607c-.786 2.28-3.139 6.317-5.563 6.361-1.608.031-2.125-.953-3.963-.953-1.837 0-2.412.923-3.932.983-2.572.099-6.542-5.827-6.542-10.995 0-4.747 3.308-7.1 6.198-7.143 1.55-.028 3.014 1.045 3.959 1.045.949 0 2.727-1.29 4.596-1.101.782.033 2.979.315 4.389 2.377-3.741 2.442-3.158 7.549.858 9.426zm-5.222-17.607c-2.826.114-5.132 3.079-4.81 5.531 2.612.203 5.118-2.725 4.81-5.531z"/></svg>
+        </div>
+        <span>macOS</span>
+      </div>
+      <div class="platform-item">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+        </div>
+        <span>Windows</span>
+      </div>
+      <div class="platform-item">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.073.076-.263.167-.455.292-.191.125-.398.291-.579.495-.384.427-.674 1.048-.673 1.854.003 1.476 1.125 2.727 2.532 2.727.343 0 .642-.065.92-.164.04.089.07.178.124.262.09.112.186.26.352.324.063.024.148.036.233.037.156 0 .343-.055.578-.173.463-.234.967-.594 1.47-.97.198-.146.37-.294.545-.435l.011-.01c.35-.28.697-.538 1.066-.71.26-.121.592-.17.918-.17.327 0 .658.05.923.172.371.173.72.433 1.073.715.177.141.35.29.549.437.504.377 1.01.738 1.474.973.235.118.422.173.578.173a.432.432 0 00.233-.037c.166-.063.262-.212.352-.324.054-.084.084-.173.124-.262.278.099.577.164.92.164 1.407 0 2.53-1.251 2.533-2.727.001-.806-.29-1.427-.673-1.854-.181-.204-.388-.37-.579-.495-.193-.125-.383-.216-.455-.292a.422.422 0 00-.112-.137c.123-.805-.009-1.656-.287-2.487-.589-1.771-1.831-3.47-2.716-4.52-.75-1.068-.974-1.929-1.05-3.021-.065-1.491 1.056-5.965-3.17-6.298A5.417 5.417 0 0012.504 0z"/></svg>
+        </div>
+        <span>Linux</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Ready to get started?</h2>
+    <p>Joey is open source and free to use. Clone the repo and build it yourself, or download from the app stores.</p>
+    <div class="hero-buttons">
+      <a href="https://github.com/benkaiser/joey-mcp-client" class="btn btn-primary" target="_blank">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="https://mcpservers.org/remote-mcp-servers" class="btn btn-secondary" target="_blank">Find MCP Servers</a>
+    </div>
+    <div class="store-badges">
+      <a href="https://apps.apple.com/app/joey-mcp-client/id6745056920" target="_blank">
+        <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" class="store-badge">
+      </a>
+      <a href="https://play.google.com/store/apps/details?id=com.kaiserapps.joey" target="_blank">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Get it on Google Play" class="store-badge">
+      </a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="https://github.com/benkaiser/joey-mcp-client" target="_blank">GitHub</a></li>
+        <li><a href="https://mcpservers.org/remote-mcp-servers" target="_blank">Find MCP Servers</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+      </ul>
+      <p class="footer-copy">&copy; 2025 Kaiserapps. Licensed under <a href="https://github.com/benkaiser/joey-mcp-client/blob/main/LICENSE" target="_blank" style="color: var(--text-muted); text-decoration: underline;">FSL-1.1-MIT</a>.</p>
+    </div>
+  </footer>
+
+</body>
+</html>
