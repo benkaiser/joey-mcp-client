@@ -382,6 +382,29 @@ class ChatService {
       for (final msg in messages) {
         final apiMsg = msg.toApiMessage();
         if (apiMsg == null) continue;
+
+        // Strip unsupported media from user messages with multipart content
+        if (apiMsg['role'] == 'user' && apiMsg['content'] is List) {
+          final parts = (apiMsg['content'] as List).cast<Map<String, dynamic>>();
+          final filtered = parts.where((part) {
+            if (!modelSupportsImages && part['type'] == 'image_url') return false;
+            if (!modelSupportsAudio && part['type'] == 'input_audio') return false;
+            return true;
+          }).toList();
+
+          if (filtered.isEmpty) {
+            // All content was stripped — skip this message entirely
+            continue;
+          }
+
+          if (filtered.length == 1 && filtered.first['type'] == 'text') {
+            // Simplify to plain string
+            apiMsg['content'] = filtered.first['text'] as String;
+          } else {
+            apiMsg['content'] = filtered;
+          }
+        }
+
         apiMessages.add(apiMsg);
 
         // If the model supports images and this tool result has image data,

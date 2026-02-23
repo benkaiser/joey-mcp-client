@@ -76,6 +76,17 @@ class ThinkingIndicator extends StatelessWidget {
       return indicators;
     }
 
+    // MCP App context message
+    if (message.role == MessageRole.mcpAppContext) {
+      indicators.add(
+        _IndicatorData(
+          icon: Icons.info_outline,
+          text: 'Additional context from MCP App',
+        ),
+      );
+      return indicators;
+    }
+
     // MCP notification message
     if (message.role == MessageRole.mcpNotification) {
       String serverName = 'MCP Server';

@@ -28,6 +28,8 @@ class MessageInput extends StatelessWidget {
   final void Function(int index) onRemovePendingImage;
   final void Function(int index) onRemovePendingAudio;
   final void Function(KeyboardInsertedContent) onContentInserted;
+  final bool modelSupportsImages;
+  final bool modelSupportsAudio;
 
   const MessageInput({
     super.key,
@@ -49,6 +51,8 @@ class MessageInput extends StatelessWidget {
     required this.onRemovePendingImage,
     required this.onRemovePendingAudio,
     required this.onContentInserted,
+    this.modelSupportsImages = true,
+    this.modelSupportsAudio = true,
   });
 
   @override
@@ -159,7 +163,8 @@ class MessageInput extends StatelessWidget {
               Row(
                 children: [
                   // Attachment button — popup with image + audio options
-                  _buildAttachmentButton(context),
+                  if (modelSupportsImages || modelSupportsAudio)
+                    _buildAttachmentButton(context),
                   Expanded(
                     child: TextField(
                       controller: messageController,
@@ -237,16 +242,17 @@ class MessageInput extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(
-          value: 'gallery',
-          child: ListTile(
-            leading: Icon(Icons.photo_library_outlined),
-            title: Text('Photo Library'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
+        if (modelSupportsImages)
+          const PopupMenuItem(
+            value: 'gallery',
+            child: ListTile(
+              leading: Icon(Icons.photo_library_outlined),
+              title: Text('Photo Library'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
           ),
-        ),
-        if (isMobile)
+        if (modelSupportsImages && isMobile)
           const PopupMenuItem(
             value: 'camera',
             child: ListTile(
@@ -256,24 +262,26 @@ class MessageInput extends StatelessWidget {
               dense: true,
             ),
           ),
-        const PopupMenuItem(
-          value: 'audio_file',
-          child: ListTile(
-            leading: Icon(Icons.audio_file_outlined),
-            title: Text('Audio File'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
+        if (modelSupportsAudio)
+          const PopupMenuItem(
+            value: 'audio_file',
+            child: ListTile(
+              leading: Icon(Icons.audio_file_outlined),
+              title: Text('Audio File'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
           ),
-        ),
-        const PopupMenuItem(
-          value: 'record',
-          child: ListTile(
-            leading: Icon(Icons.mic_outlined),
-            title: Text('Record Audio'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
+        if (modelSupportsAudio)
+          const PopupMenuItem(
+            value: 'record',
+            child: ListTile(
+              leading: Icon(Icons.mic_outlined),
+              title: Text('Record Audio'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
           ),
-        ),
       ],
     );
   }

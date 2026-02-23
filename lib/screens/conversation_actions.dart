@@ -163,6 +163,7 @@ mixin ConversationActionsMixin on State<ChatScreen> {
         case MessageRole.modelChange:
         case MessageRole.elicitation:
         case MessageRole.mcpNotification:
+        case MessageRole.mcpAppContext:
           // Skip non-conversational messages
           break;
       }

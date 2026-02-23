@@ -7,6 +7,7 @@ enum MessageRole {
   tool, // For tool result messages
   elicitation, // For elicitation request cards (local display only, not sent to LLM)
   mcpNotification, // For MCP server notifications (included as context for LLM)
+  mcpAppContext, // For MCP App context updates (sent to LLM as user role)
   modelChange, // For model change indicators (local display only, not sent to LLM)
 }
 
@@ -139,6 +140,49 @@ class Message {
     if (role == MessageRole.modelChange) {
       return null;
     }
+    // MCP App context updates are sent as user messages
+    if (role == MessageRole.mcpAppContext) {
+      try {
+        final contentBlocks = jsonDecode(content) as List;
+        final hasNonText = contentBlocks.any(
+          (block) => block is Map<String, dynamic> && block['type'] != 'text',
+        );
+
+        if (hasNonText) {
+          // Build multipart content for mixed text/image blocks
+          final contentParts = <Map<String, dynamic>>[
+            {'type': 'text', 'text': '[Additional context from MCP App]'},
+          ];
+          for (final block in contentBlocks) {
+            if (block is Map<String, dynamic>) {
+              if (block['type'] == 'text') {
+                contentParts.add({'type': 'text', 'text': block['text'] as String});
+              } else if (block['type'] == 'image') {
+                final data = block['data'] as String;
+                final mimeType = block['mimeType'] as String? ?? 'image/png';
+                contentParts.add({
+                  'type': 'image_url',
+                  'image_url': {'url': 'data:$mimeType;base64,$data'},
+                });
+              }
+            }
+          }
+          return {'role': 'user', 'content': contentParts};
+        } else {
+          // Text-only: concatenate into a single string
+          String contextContent = '[Additional context from MCP App]\n\n';
+          final textParts = contentBlocks
+              .whereType<Map<String, dynamic>>()
+              .where((block) => block['type'] == 'text')
+              .map((block) => block['text'] as String)
+              .toList();
+          contextContent += textParts.join('\n');
+          return {'role': 'user', 'content': contextContent};
+        }
+      } catch (e) {
+        return {'role': 'user', 'content': '[Additional context from MCP App]\n\n$content'};
+      }
+    }
     // MCP notifications are sent as system messages for context
     if (role == MessageRole.mcpNotification) {
       final data = notificationData != null
@@ -175,9 +219,12 @@ class Message {
 
       // If user message has image or audio attachments, build multi-part content
       if (role == MessageRole.user && (imageData != null || audioData != null)) {
-        final contentParts = <Map<String, dynamic>>[
-          {'type': 'text', 'text': content},
-        ];
+        final contentParts = <Map<String, dynamic>>[];
+
+        // Only include text part if there's actual content
+        if (content.isNotEmpty) {
+          contentParts.add({'type': 'text', 'text': content});
+        }
 
         // Add image parts
         if (imageData != null) {

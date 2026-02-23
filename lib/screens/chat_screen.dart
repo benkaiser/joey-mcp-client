@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../models/message.dart';
 import '../models/mcp_server.dart';
 import '../models/elicitation.dart';
+import '../models/pending_image.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
@@ -580,10 +581,55 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// Handle a message from an MCP App WebView
-  void _handleUiMessage(String message) {
+  void _handleUiMessage(String message, {List<PendingImage> images = const []}) {
+    // Add any images from the MCP App to the pending images
+    for (final image in images) {
+      _imageHandler.pendingImages.add(image);
+    }
     // Insert the message into the text input and trigger send
     _messageController.text = message;
     _sendMessage();
+  }
+
+  /// Handle model context update from an MCP App WebView.
+  /// Persists the context as a mcpAppContext message linked to the parent tool result.
+  Future<void> _handleUpdateModelContext(
+    String parentMessageId,
+    List<dynamic> content,
+    Map<String, dynamic>? structuredContent,
+  ) async {
+    final provider = context.read<ConversationProvider>();
+    final messages = provider.getMessages(widget.conversation.id);
+
+    // Check for existing mcpAppContext message with matching toolCallId
+    final existingIndex = messages.indexWhere(
+      (m) => m.role == MessageRole.mcpAppContext && m.toolCallId == parentMessageId,
+    );
+
+    final contentJson = jsonEncode(content);
+    final structuredContentJson = structuredContent != null ? jsonEncode(structuredContent) : null;
+
+    if (existingIndex != -1) {
+      // Update existing context message in place
+      final existing = messages[existingIndex];
+      final updated = existing.copyWith(
+        content: contentJson,
+        notificationData: structuredContentJson,
+      );
+      await provider.updateFullMessage(updated);
+    } else {
+      // Create a new mcpAppContext message
+      final contextMessage = Message(
+        id: const Uuid().v4(),
+        conversationId: widget.conversation.id,
+        role: MessageRole.mcpAppContext,
+        content: contentJson,
+        timestamp: DateTime.now(),
+        toolCallId: parentMessageId,
+        notificationData: structuredContentJson,
+      );
+      await provider.addMessage(contextMessage);
+    }
   }
 
   Future<void> _deleteMessage(
@@ -962,6 +1008,7 @@ class _ChatScreenState extends State<ChatScreen>
                   mcpClients: _serverManager.mcpClients,
                   appOnlyTools: _serverManager.appOnlyTools,
                   onUiMessage: _handleUiMessage,
+                  onUpdateModelContext: _handleUpdateModelContext,
                 ),
               ),
               _buildMessageInput(),
@@ -1092,6 +1139,20 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildMessageInput() {
+    final modelSupportsImages =
+        _modelDetails != null &&
+        _modelDetails!['architecture'] != null &&
+        (_modelDetails!['architecture']['input_modalities'] as List?)
+                ?.contains('image') ==
+            true;
+
+    final modelSupportsAudio =
+        _modelDetails != null &&
+        _modelDetails!['architecture'] != null &&
+        (_modelDetails!['architecture']['input_modalities'] as List?)
+                ?.contains('audio') ==
+            true;
+
     return MessageInput(
       messageController: _messageController,
       focusNode: _focusNode,
@@ -1115,6 +1176,8 @@ class _ChatScreenState extends State<ChatScreen>
         _audioHandler.removeAt(index);
       },
       onContentInserted: _imageHandler.onContentInserted,
+      modelSupportsImages: modelSupportsImages,
+      modelSupportsAudio: modelSupportsAudio,
     );
   }
 

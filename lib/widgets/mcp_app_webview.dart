@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:mcp_dart/mcp_dart.dart' show TextResourceContents;
 import 'package:url_launcher/url_launcher.dart';
 import '../models/mcp_app_ui.dart';
+import '../models/pending_image.dart';
 import '../services/mcp_app_ui_service.dart';
 import '../services/mcp_client_service.dart';
 
@@ -16,7 +18,8 @@ class McpAppWebView extends StatefulWidget {
   final McpClientService? mcpClient;
   final McpAppUiService? uiService;
   final Map<String, McpTool>? appOnlyTools;
-  final void Function(String message)? onUiMessage;
+  final void Function(String message, {List<PendingImage> images})? onUiMessage;
+  final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
 
   const McpAppWebView({
     super.key,
@@ -26,6 +29,7 @@ class McpAppWebView extends StatefulWidget {
     this.uiService,
     this.appOnlyTools,
     this.onUiMessage,
+    this.onUpdateModelContext,
   });
 
   @override
@@ -344,16 +348,57 @@ $jsBridge
         return {'success': true};
 
       case 'ui/message':
-        final message = params['message'] as String?;
-        if (message != null) {
-          widget.onUiMessage?.call(message);
+        // MCP spec: params has { role, content } where content is
+        // either a single content part or an array of content parts.
+        // Content parts can be { type: "text", text: "..." } or
+        // { type: "image", data: "<base64>", mimeType: "image/png" }
+        final content = params['content'];
+        final List<Map<dynamic, dynamic>> contentParts;
+        if (content is Map) {
+          contentParts = [content];
+        } else if (content is List) {
+          contentParts = content.whereType<Map>().toList();
+        } else {
+          contentParts = [];
+        }
+
+        // Extract text parts
+        final textParts = contentParts
+            .where((c) => c['type'] == 'text')
+            .map((c) => c['text'] as String?)
+            .where((t) => t != null && t.isNotEmpty)
+            .toList();
+        final messageText = textParts.isNotEmpty ? textParts.join('\n') : '';
+
+        // Extract image parts
+        final images = <PendingImage>[];
+        for (final part in contentParts) {
+          if (part['type'] == 'image' && part['data'] is String) {
+            try {
+              final bytes = base64Decode(part['data'] as String);
+              final mimeType = (part['mimeType'] as String?) ?? 'image/png';
+              images.add(PendingImage(
+                bytes: Uint8List.fromList(bytes),
+                mimeType: mimeType,
+              ));
+            } catch (e) {
+              debugPrint('MCP WebView: Failed to decode image: $e');
+            }
+          }
+        }
+
+        if (messageText.isNotEmpty || images.isNotEmpty) {
+          widget.onUiMessage?.call(messageText, images: images);
         }
         return {'success': true};
 
       case 'ui/update-model-context':
-        // Store context for future turns — for now just acknowledge
+        // Store context for future turns
         debugPrint('MCP WebView: Model context update: $params');
-        return {'success': true};
+        final content = params['content'] as List<dynamic>? ?? [];
+        final structuredContent = params['structuredContent'] as Map<String, dynamic>?;
+        widget.onUpdateModelContext?.call(widget.messageId, content, structuredContent);
+        return {};
 
       default:
         throw Exception('Unknown method: $method');

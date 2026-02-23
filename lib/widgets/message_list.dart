@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/message.dart';
 import '../models/elicitation.dart';
+import '../models/pending_image.dart';
 import '../providers/conversation_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/thinking_indicator.dart';
@@ -52,7 +53,8 @@ class MessageList extends StatefulWidget {
   final McpAppUiService? uiService;
   final Map<String, McpClientService>? mcpClients;
   final Map<String, List<McpTool>>? appOnlyTools;
-  final void Function(String message)? onUiMessage;
+  final void Function(String message, {List<PendingImage> images})? onUiMessage;
+  final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
 
   const MessageList({
     super.key,
@@ -75,6 +77,7 @@ class MessageList extends StatefulWidget {
     this.mcpClients,
     this.appOnlyTools,
     this.onUiMessage,
+    this.onUpdateModelContext,
   });
 
   @override
@@ -91,6 +94,97 @@ class _MessageListState extends State<MessageList> {
   GlobalKey<State<McpAppWebView>> _webViewKeyFor(String messageId) {
     return _webViewKeys.putIfAbsent(
         messageId, () => GlobalKey<State<McpAppWebView>>());
+  }
+
+  /// Build full context display for mcpAppContext messages when thinking is shown.
+  Widget _buildFullContextDisplay(BuildContext context, Message contextMessage) {
+    // Parse content blocks into widgets
+    List<Widget> contentWidgets = [];
+    try {
+      final contentBlocks = jsonDecode(contextMessage.content) as List;
+      for (int i = 0; i < contentBlocks.length; i++) {
+        final block = contentBlocks[i];
+        if (block is Map<String, dynamic>) {
+          if (block['type'] == 'text') {
+            contentWidgets.add(
+              Text(
+                block['text'] as String,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 13,
+                ),
+              ),
+            );
+          } else if (block['type'] == 'image') {
+            final data = block['data'] as String?;
+            final mimeType = block['mimeType'] as String? ?? 'image/png';
+            if (data != null) {
+              contentWidgets.add(
+                CachedImageWidget(
+                  key: ValueKey('${contextMessage.id}_ctx_img_$i'),
+                  base64Data: data,
+                  mimeType: mimeType,
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      contentWidgets.add(
+        Text(
+          contextMessage.content,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: 13,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 4, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Additional context from MCP App',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 8,
+              children: contentWidgets,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -147,6 +241,9 @@ class _MessageListState extends State<MessageList> {
 
         // Filter messages based on thinking mode and role
         final displayMessages = messages.where((msg) {
+          // Hide mcpAppContext messages — rendered inline with parent WebView
+          if (msg.role == MessageRole.mcpAppContext) return false;
+
           // Always show user messages
           if (msg.role == MessageRole.user) return true;
 
@@ -364,6 +461,12 @@ class _MessageListState extends State<MessageList> {
                     };
                   }
 
+                  // Look up associated mcpAppContext message
+                  final contextMessage = messages.cast<Message?>().firstWhere(
+                    (m) => m!.role == MessageRole.mcpAppContext && m.toolCallId == message.id,
+                    orElse: () => null,
+                  );
+
                   return Column(
                     key: ValueKey(message.id),
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,7 +480,14 @@ class _MessageListState extends State<MessageList> {
                         uiService: widget.uiService,
                         appOnlyTools: serverAppOnlyTools,
                         onUiMessage: widget.onUiMessage,
+                        onUpdateModelContext: widget.onUpdateModelContext,
                       ),
+                      if (contextMessage != null) ...[
+                        if (!widget.showThinking)
+                          ThinkingIndicator(message: contextMessage)
+                        else
+                          _buildFullContextDisplay(context, contextMessage),
+                      ],
                     ],
                   );
                 } catch (e) {
