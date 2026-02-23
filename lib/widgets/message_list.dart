@@ -9,6 +9,10 @@ import '../widgets/thinking_indicator.dart';
 import '../widgets/tool_result_media.dart';
 import '../widgets/elicitation_url_card.dart';
 import '../widgets/elicitation_form_card.dart';
+import '../models/mcp_app_ui.dart';
+import '../services/mcp_app_ui_service.dart';
+import '../services/mcp_client_service.dart';
+import '../widgets/mcp_app_webview.dart';
 
 /// Widget that renders the message list for a conversation, including
 /// message filtering, index mapping, and per-type rendering logic.
@@ -44,6 +48,12 @@ class MessageList extends StatelessWidget {
     Map<String, dynamic>? content,
   ) onFormElicitationResponse;
 
+  // MCP App UI support
+  final McpAppUiService? uiService;
+  final Map<String, McpClientService>? mcpClients;
+  final Map<String, List<McpTool>>? appOnlyTools;
+  final void Function(String message)? onUiMessage;
+
   const MessageList({
     super.key,
     required this.conversationId,
@@ -61,6 +71,10 @@ class MessageList extends StatelessWidget {
     required this.onRegenerateLastResponse,
     required this.onUrlElicitationResponse,
     required this.onFormElicitationResponse,
+    this.uiService,
+    this.mcpClients,
+    this.appOnlyTools,
+    this.onUiMessage,
   });
 
   @override
@@ -246,6 +260,7 @@ class MessageList extends StatelessWidget {
             // Render model change indicator
             if (message.role == MessageRole.modelChange) {
               return MessageBubble(
+                key: ValueKey(message.id),
                 message: message,
                 showThinking: showThinking,
                 onDelete: () =>
@@ -282,6 +297,7 @@ class MessageList extends StatelessWidget {
 
               if (request.mode == ElicitationMode.url) {
                 return ElicitationUrlCard(
+                  key: ValueKey(message.id),
                   request: request,
                   responseState: responseState,
                   onRespond: responseState == null
@@ -294,6 +310,7 @@ class MessageList extends StatelessWidget {
                 );
               } else {
                 return ElicitationFormCard(
+                  key: ValueKey(message.id),
                   request: request,
                   responseState: responseState,
                   submittedContent: submittedContent,
@@ -312,12 +329,53 @@ class MessageList extends StatelessWidget {
 
             // Format tool result messages
             if (message.role == MessageRole.tool) {
+              // Check for MCP App UI data
+              if (message.uiData != null) {
+                try {
+                  final uiData = McpAppUiData.fromJson(
+                    jsonDecode(message.uiData!) as Map<String, dynamic>,
+                  );
+
+                  // Find the MCP client for this server
+                  final mcpClient = mcpClients?[uiData.serverId];
+
+                  // Build flat map of app-only tools for this server
+                  Map<String, McpTool>? serverAppOnlyTools;
+                  final appOnlyList = appOnlyTools?[uiData.serverId];
+                  if (appOnlyList != null) {
+                    serverAppOnlyTools = {
+                      for (final t in appOnlyList) t.name: t,
+                    };
+                  }
+
+                  return Column(
+                    key: ValueKey(message.id),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ThinkingIndicator(message: message),
+                      McpAppWebView(
+                        uiData: uiData,
+                        messageId: message.id,
+                        mcpClient: mcpClient,
+                        uiService: uiService,
+                        appOnlyTools: serverAppOnlyTools,
+                        onUiMessage: onUiMessage,
+                      ),
+                    ],
+                  );
+                } catch (e) {
+                  // Fall through to normal tool result rendering
+                  debugPrint('MCP UI: Failed to parse uiData: $e');
+                }
+              }
+
               // Show minimal indicator when thinking is disabled
               if (!showThinking) {
                 // Still show images/audio even when thinking is hidden
                 if (message.imageData != null ||
                     message.audioData != null) {
                   return Column(
+                    key: ValueKey(message.id),
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ThinkingIndicator(message: message),
@@ -340,7 +398,7 @@ class MessageList extends StatelessWidget {
                     ],
                   );
                 }
-                return ThinkingIndicator(message: message);
+                return ThinkingIndicator(key: ValueKey(message.id), message: message);
               }
               // Check if this is an error result
               final isError =
@@ -358,6 +416,7 @@ class MessageList extends StatelessWidget {
                     '$icon **Result from ${message.toolName}:**\n\n${message.content}',
               );
               return MessageBubble(
+                key: ValueKey(message.id),
                 message: formattedMessage,
                 showThinking: showThinking,
                 onDelete: () =>
@@ -370,10 +429,11 @@ class MessageList extends StatelessWidget {
             if (message.role == MessageRole.mcpNotification) {
               // Show minimal indicator when thinking is disabled
               if (!showThinking) {
-                return ThinkingIndicator(message: message);
+                return ThinkingIndicator(key: ValueKey(message.id), message: message);
               }
               // Full notification display is handled by MessageBubble
               return MessageBubble(
+                key: ValueKey(message.id),
                 message: message,
                 showThinking: showThinking,
                 onDelete: () =>
@@ -388,7 +448,7 @@ class MessageList extends StatelessWidget {
                 message.toolCallData != null) {
               // Show minimal indicator when thinking is disabled
               if (!showThinking) {
-                return ThinkingIndicator(message: message);
+                return ThinkingIndicator(key: ValueKey(message.id), message: message);
               }
 
               // Build tool call display content
@@ -468,6 +528,7 @@ class MessageList extends StatelessWidget {
                 usageData: message.usageData,
               );
               return MessageBubble(
+                key: ValueKey(message.id),
                 message: formattedMessage,
                 showThinking: showThinking,
                 onDelete: () =>
@@ -477,6 +538,7 @@ class MessageList extends StatelessWidget {
             }
 
             return MessageBubble(
+              key: ValueKey(message.id),
               message: message,
               showThinking: showThinking,
               onDelete: () => onDeleteMessage(message.id, provider),

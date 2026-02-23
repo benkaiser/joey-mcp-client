@@ -32,18 +32,34 @@ class McpAppWebView extends StatefulWidget {
   State<McpAppWebView> createState() => _McpAppWebViewState();
 }
 
-class _McpAppWebViewState extends State<McpAppWebView> {
+class _McpAppWebViewState extends State<McpAppWebView>
+    with AutomaticKeepAliveClientMixin {
   InAppWebViewController? _controller;
   double _height = 300.0;
   bool _initialized = false;
   bool _viewReady = false;
+  bool _disposed = false;
   static const double _minHeight = 50.0;
   static const double _maxHeight = 800.0;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void dispose() {
+    _disposed = true;
     _sendTeardown();
     super.dispose();
+  }
+
+  /// Safely evaluate JavaScript, ignoring errors if the WebView has been disposed.
+  Future<void> _safeEvaluateJavascript(String source) async {
+    if (_disposed || _controller == null) return;
+    try {
+      await _controller!.evaluateJavascript(source: source);
+    } catch (e) {
+      debugPrint('MCP WebView: evaluateJavascript failed (likely disposed): $e');
+    }
   }
 
   /// Build the full HTML with CSP meta tag, theme CSS variables, and JS bridge injected
@@ -398,9 +414,8 @@ $jsBridge
     };
 
     final json = jsonEncode(initResult);
-    _controller!.evaluateJavascript(
-      source:
-          'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
+    _safeEvaluateJavascript(
+      'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
     );
     _initialized = true;
   }
@@ -419,9 +434,8 @@ $jsBridge
     };
 
     final json = jsonEncode(notification);
-    _controller!.evaluateJavascript(
-      source:
-          'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
+    _safeEvaluateJavascript(
+      'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
     );
   }
 
@@ -439,9 +453,8 @@ $jsBridge
       };
 
       final json = jsonEncode(notification);
-      _controller!.evaluateJavascript(
-        source:
-            'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
+      _safeEvaluateJavascript(
+        'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
       );
     } catch (e) {
       debugPrint('MCP WebView: Failed to send tool result: $e');
@@ -459,14 +472,9 @@ $jsBridge
     };
 
     final json = jsonEncode(notification);
-    try {
-      _controller!.evaluateJavascript(
-        source:
-            'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
-      );
-    } catch (e) {
-      // Ignore errors during teardown
-    }
+    _safeEvaluateJavascript(
+      'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
+    );
   }
 
   String _escapeJs(String s) {
@@ -488,6 +496,7 @@ $jsBridge
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required by AutomaticKeepAliveClientMixin
     return Container(
       height: _height,
       margin: const EdgeInsets.symmetric(vertical: 4.0),
@@ -521,9 +530,8 @@ $jsBridge
                 _handleBridgeMessage(messageJson).then((response) {
                   if (response != null) {
                     // Send response back via evaluateJavascript
-                    controller.evaluateJavascript(
-                      source:
-                          'if(window.__mcpBridgeResponse) window.__mcpBridgeResponse(\'${_escapeJs(response)}\');',
+                    _safeEvaluateJavascript(
+                      'if(window.__mcpBridgeResponse) window.__mcpBridgeResponse(\'${_escapeJs(response)}\');',
                     );
                   }
                 });
