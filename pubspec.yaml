@@ -56,7 +56,10 @@ dependencies:
   flutter_smooth_markdown: ^0.7.1
 
   # MCP Client
-  mcp_dart: ^1.2.2
+  mcp_dart:
+    git:
+      url: https://github.com/benkaiser/mcp_dart.git
+      ref: main
   adaptive_dialog: ^2.6.0
   just_audio: ^0.10.5
   path_provider: ^2.1.5
@@ -68,6 +71,7 @@ dependencies:
   flutter_custom_tabs: ^2.5.0
   flutter_web_auth_2: ^5.0.1
   wakelock_plus: ^1.4.0
+  flutter_inappwebview: ^6.0.0
 
 dev_dependencies:
   flutter_test:

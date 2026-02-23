@@ -146,6 +146,11 @@ class McpClientService {
               form: ClientElicitationForm(applyDefaults: true),
               url: ClientElicitationUrl(),
             ),
+            extensions: {
+              'io.modelcontextprotocol/ui': {
+                'mimeTypes': ['text/html;profile=mcp-app'],
+              },
+            },
           ),
         ),
       );
@@ -555,6 +560,36 @@ class McpClientService {
         );
       }
       throw Exception('Failed to get prompt $name: $e');
+    }
+  }
+
+  /// Read a resource from the MCP server by URI
+  Future<ReadResourceResult> readResource(String uri) async {
+    if (_client == null) {
+      throw Exception('MCP client not initialized');
+    }
+
+    try {
+      return await _client!.readResource(ReadResourceRequest(uri: uri));
+    } on UnauthorizedError catch (e) {
+      print('MCP: Read resource unauthorized: $e');
+      onAuthRequired?.call(serverUrl);
+      throw McpAuthRequiredException(
+        serverUrl,
+        e.message ?? 'OAuth authentication required',
+      );
+    } catch (e) {
+      print('MCP: Failed to read resource $uri: $e');
+      if (e.toString().contains('401') ||
+          e.toString().toLowerCase().contains('unauthorized') ||
+          e.toString().toLowerCase().contains('authentication failed')) {
+        onAuthRequired?.call(serverUrl);
+        throw McpAuthRequiredException(
+          serverUrl,
+          'OAuth authentication required',
+        );
+      }
+      throw Exception('Failed to read resource $uri: $e');
     }
   }
 

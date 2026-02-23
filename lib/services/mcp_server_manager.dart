@@ -5,6 +5,7 @@ import 'database_service.dart';
 import 'mcp_client_service.dart';
 import 'mcp_oauth_service.dart';
 import 'mcp_oauth_manager.dart';
+import 'mcp_app_ui_service.dart';
 
 /// Delegate class that manages MCP server lifecycle:
 /// loading, initializing, refreshing tools, and updating servers.
@@ -12,6 +13,12 @@ class McpServerManager extends ChangeNotifier {
   List<McpServer> mcpServers = [];
   final Map<String, McpClientService> mcpClients = {};
   final Map<String, List<McpTool>> mcpTools = {};
+
+  /// UI service for managing MCP App resources
+  final McpAppUiService uiService = McpAppUiService();
+
+  /// Tools that are app-only (hidden from LLM, but callable from WebView)
+  final Map<String, List<McpTool>> appOnlyTools = {};
 
   /// Reference to the OAuth manager (for creating providers, handling auth).
   McpOAuthManager? oauthManager;
@@ -124,6 +131,26 @@ class McpServerManager extends ChangeNotifier {
           // Replace client reference for the rest of setup
           mcpClients[server.id] = freshClient;
           mcpTools[server.id] = tools;
+
+          // Separate app-only tools from LLM-visible tools
+          final allTools = tools;
+          final llmTools = allTools.where((t) => !t.isAppOnly).toList();
+          final appOnly = allTools.where((t) => t.isAppOnly).toList();
+          mcpTools[server.id] = llmTools;
+          appOnlyTools[server.id] = appOnly;
+
+          // Prefetch UI resources
+          uiService.prefetchUiResources(allTools, freshClient);
+
+          // Set up resource list change handler
+          freshClient.onResourcesListChanged = () {
+            // Invalidate UI cache and re-prefetch
+            uiService.invalidateAll();
+            final currentTools = mcpTools[server.id];
+            if (currentTools != null) {
+              uiService.prefetchUiResources(currentTools, freshClient);
+            }
+          };
           // Update stored session ID
           await DatabaseService.instance.updateMcpSessionId(
             convId,
@@ -161,6 +188,27 @@ class McpServerManager extends ChangeNotifier {
 
       mcpClients[server.id] = client;
       mcpTools[server.id] = tools;
+
+      // Separate app-only tools from LLM-visible tools
+      final allTools = tools;
+      final llmTools = allTools.where((t) => !t.isAppOnly).toList();
+      final appOnly = allTools.where((t) => t.isAppOnly).toList();
+      mcpTools[server.id] = llmTools;
+      appOnlyTools[server.id] = appOnly;
+
+      // Prefetch UI resources
+      uiService.prefetchUiResources(allTools, client);
+
+      // Set up resource list change handler
+      client.onResourcesListChanged = () {
+        // Invalidate UI cache and re-prefetch
+        uiService.invalidateAll();
+        final currentTools = mcpTools[server.id];
+        if (currentTools != null) {
+          uiService.prefetchUiResources(currentTools, client);
+        }
+      };
+
       notifyListeners();
       onServerConnected?.call(server.name);
 
@@ -219,6 +267,17 @@ class McpServerManager extends ChangeNotifier {
     try {
       final tools = await client.listTools();
       mcpTools[serverId] = tools;
+
+      // Separate app-only tools from LLM-visible tools
+      final allTools = tools;
+      final llmTools = allTools.where((t) => !t.isAppOnly).toList();
+      final appOnly = allTools.where((t) => t.isAppOnly).toList();
+      mcpTools[serverId] = llmTools;
+      appOnlyTools[serverId] = appOnly;
+
+      // Prefetch UI resources
+      uiService.prefetchUiResources(allTools, client);
+
       notifyListeners();
       print('Refreshed tools for server $serverId: ${tools.length} tools');
     } catch (e) {
@@ -242,6 +301,7 @@ class McpServerManager extends ChangeNotifier {
 
     final client = mcpClients.remove(serverId);
     mcpTools.remove(serverId);
+    appOnlyTools.remove(serverId);
     await client?.close();
     await DatabaseService.instance.updateMcpSessionId(
       conversationId,
@@ -277,6 +337,7 @@ class McpServerManager extends ChangeNotifier {
     }
     mcpClients.clear();
     mcpTools.clear();
+    appOnlyTools.clear();
   }
 
   @override

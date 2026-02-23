@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_webview_window
   dynamic_color
   file_selector_windows
+  flutter_inappwebview_windows
   pasteboard
   record_windows
   screen_retriever_windows

@@ -31,6 +31,8 @@ class Message {
   audioData; // JSON array of audio objects [{data: base64, mimeType: string}]
   final String?
   usageData; // JSON string of usage/cost data from OpenRouter
+  final String?
+  uiData; // JSON string of McpAppUiData for MCP App UI rendering
 
   Message({
     required this.id,
@@ -47,6 +49,7 @@ class Message {
     this.imageData,
     this.audioData,
     this.usageData,
+    this.uiData,
   });
 
   Map<String, dynamic> toMap() {
@@ -65,6 +68,7 @@ class Message {
       'imageData': imageData,
       'audioData': audioData,
       'usageData': usageData,
+      'uiData': uiData,
     };
   }
 
@@ -84,6 +88,7 @@ class Message {
       imageData: map['imageData'],
       audioData: map['audioData'],
       usageData: map['usageData'],
+      uiData: map['uiData'],
     );
   }
 
@@ -102,6 +107,7 @@ class Message {
     String? imageData,
     String? audioData,
     String? usageData,
+    String? uiData,
   }) {
     return Message(
       id: id ?? this.id,
@@ -118,6 +124,7 @@ class Message {
       imageData: imageData ?? this.imageData,
       audioData: audioData ?? this.audioData,
       usageData: usageData ?? this.usageData,
+      uiData: uiData ?? this.uiData,
     );
   }
 

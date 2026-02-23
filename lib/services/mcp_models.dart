@@ -40,15 +40,39 @@ class McpTool {
   final String name;
   final String? description;
   final Map<String, dynamic> inputSchema;
+  final Map<String, dynamic>? meta;
+  final Map<String, dynamic>? annotations;
 
-  McpTool({required this.name, this.description, required this.inputSchema});
+  McpTool({required this.name, this.description, required this.inputSchema, this.meta, this.annotations});
 
   factory McpTool.fromMcpDartTool(Tool tool) {
     return McpTool(
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema.toJson(),
+      meta: tool.meta,
+      annotations: tool.annotations?.toJson(),
     );
+  }
+
+  /// Returns the UI resource URI from meta, supporting both nested and deprecated flat formats
+  String? get uiResourceUri =>
+      meta?['ui']?['resourceUri'] as String? ?? meta?['ui/resourceUri'] as String?;
+
+  /// Whether this tool has an associated UI resource
+  bool get hasUi => uiResourceUri != null;
+
+  /// List of visibility targets like ["app"] or ["app", "llm"]
+  List<String>? get uiVisibility =>
+      (meta?['ui']?['visibility'] as List?)?.cast<String>();
+
+  /// Whether this tool is only visible in the app UI (not sent to LLM)
+  bool get isAppOnly {
+    final vis = uiVisibility;
+    if (vis != null && vis.length == 1 && vis.first == 'app') return true;
+    final audience = annotations?['audience'];
+    if (audience is List && audience.length == 1 && audience.first == 'app') return true;
+    return false;
   }
 
   /// Convert to OpenAI's tool format (required by OpenRouter)
@@ -68,8 +92,10 @@ class McpTool {
 class McpToolResult {
   final List<McpContent> content;
   final bool? isError;
+  final Map<String, dynamic>? meta;
+  final Map<String, dynamic>? structuredContent;
 
-  McpToolResult({required this.content, this.isError});
+  McpToolResult({required this.content, this.isError, this.meta, this.structuredContent});
 
   factory McpToolResult.fromMcpDartResult(CallToolResult result) {
     return McpToolResult(
@@ -77,6 +103,8 @@ class McpToolResult {
           .map((c) => McpContent.fromMcpDartContent(c))
           .toList(),
       isError: result.isError,
+      meta: result.meta,
+      structuredContent: result.structuredContent,
     );
   }
 }

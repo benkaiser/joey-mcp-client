@@ -36,11 +36,16 @@ class _McpAppWebViewState extends State<McpAppWebView>
     with AutomaticKeepAliveClientMixin {
   InAppWebViewController? _controller;
   double _height = 300.0;
-  bool _initialized = false;
   bool _viewReady = false;
   bool _disposed = false;
   static const double _minHeight = 50.0;
-  static const double _maxHeight = 800.0;
+
+  /// Max height capped at 90% of available chat area to prevent
+  /// the WebView from consuming the entire scroll view.
+  double _maxHeight(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    return screenHeight * 0.9;
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -78,87 +83,86 @@ class _McpAppWebViewState extends State<McpAppWebView>
     final borderColor = _colorToCss(colorScheme.outline);
 
     // JavaScript bridge shim
-    // This intercepts postMessage calls and routes them through flutter_inappwebview's handler
+    // This intercepts postMessage calls and routes them through flutter_inappwebview's handler.
+    //
+    // The MCP Apps SDK (PostMessageTransport) communicates via:
+    //   - Outbound: window.parent.postMessage(jsonRpcMessage, "*")
+    //   - Inbound:  window.addEventListener('message', handler) with event.source check
+    //
+    // In a loadData WebView, window.parent === window, so we intercept postMessage to
+    // route outbound messages through Flutter's callHandler bridge. For inbound messages
+    // from the host (responses and notifications), we dispatch MessageEvents with
+    // source: window so the SDK's event.source === window.parent check passes.
     const jsBridge = r'''
 <script>
 (function() {
-  // JSON-RPC request ID counter
-  let _rpcId = 0;
+  // JSON-RPC request ID counter for the bridge layer
+  let _bridgeId = 0;
+  // Map bridge IDs to {originalId, resolve, reject} so we can route responses
   const _pendingRequests = {};
 
-  // The MCP bridge object exposed to the View
-  window.__mcpBridge = {
-    // Send a JSON-RPC request to the host and return a promise
-    sendRequest: function(method, params) {
-      return new Promise(function(resolve, reject) {
-        const id = ++_rpcId;
-        _pendingRequests[id] = { resolve: resolve, reject: reject };
-        window.flutter_inappwebview.callHandler('mcpBridge', JSON.stringify({
-          jsonrpc: '2.0',
-          method: method,
-          params: params || {},
-          id: id
-        }));
-      });
-    },
-    // Send a JSON-RPC notification to the host (no response expected)
-    sendNotification: function(method, params) {
-      window.flutter_inappwebview.callHandler('mcpBridge', JSON.stringify({
-        jsonrpc: '2.0',
-        method: method,
-        params: params || {}
-      }));
-    }
-  };
+  // Helper: dispatch a MessageEvent that the SDK's PostMessageTransport will accept.
+  // The SDK checks event.source === window.parent; in a loadData WebView
+  // window.parent === window, so we set source: window.
+  function _dispatchToView(data) {
+    window.dispatchEvent(new MessageEvent('message', {
+      data: data,
+      source: window,
+    }));
+  }
 
-  // Handle responses from the host
+  // Send a JSON-RPC message to Flutter via callHandler.
+  // The message is sent as-is (stringified); Flutter will parse and respond.
+  function _sendToHost(message) {
+    window.flutter_inappwebview.callHandler('mcpBridge', JSON.stringify(message));
+  }
+
+  // Handle responses from the host (called via evaluateJavascript)
   window.__mcpBridgeResponse = function(responseJson) {
     try {
       const response = JSON.parse(responseJson);
-      if (response.id && _pendingRequests[response.id]) {
-        const pending = _pendingRequests[response.id];
-        delete _pendingRequests[response.id];
-        if (response.error) {
-          pending.reject(new Error(response.error.message || 'Unknown error'));
-        } else {
-          pending.resolve(response.result);
-        }
+      const bridgeId = response.id;
+      const pending = _pendingRequests[bridgeId];
+      if (pending) {
+        delete _pendingRequests[bridgeId];
+        // Re-map the bridge ID back to the original view ID
+        response.id = pending.originalId;
+        _dispatchToView(response);
       }
     } catch(e) {
       console.error('MCP Bridge response error:', e);
     }
   };
 
-  // Handle notifications from the host to the View
+  // Handle notifications from the host (called via evaluateJavascript)
   window.__mcpBridgeNotification = function(notificationJson) {
     try {
       const notification = JSON.parse(notificationJson);
-      if (window.__mcpViewHandler) {
-        window.__mcpViewHandler(notification);
-      }
+      _dispatchToView(notification);
     } catch(e) {
       console.error('MCP Bridge notification error:', e);
     }
   };
 
-  // Intercept window.parent.postMessage for compatibility
+  // Intercept postMessage to capture outbound JSON-RPC messages from the SDK.
+  // The SDK calls window.parent.postMessage(msg, "*"); since window.parent === window
+  // in a loadData WebView, this override captures all outbound messages.
   const originalPostMessage = window.postMessage.bind(window);
   window.postMessage = function(message, targetOrigin) {
     if (typeof message === 'object' && message.jsonrpc === '2.0') {
-      if (message.id) {
-        window.__mcpBridge.sendRequest(message.method, message.params)
-          .then(function(result) {
-            window.dispatchEvent(new MessageEvent('message', {
-              data: { jsonrpc: '2.0', result: result, id: message.id }
-            }));
-          })
-          .catch(function(err) {
-            window.dispatchEvent(new MessageEvent('message', {
-              data: { jsonrpc: '2.0', error: { code: -1, message: err.message }, id: message.id }
-            }));
-          });
+      if (message.id !== undefined && message.id !== null) {
+        // JSON-RPC request — assign a bridge ID and track the original ID
+        const bridgeId = ++_bridgeId;
+        _pendingRequests[bridgeId] = { originalId: message.id };
+        _sendToHost({
+          jsonrpc: '2.0',
+          method: message.method,
+          params: message.params || {},
+          id: bridgeId,
+        });
       } else {
-        window.__mcpBridge.sendNotification(message.method, message.params);
+        // JSON-RPC notification — forward as-is
+        _sendToHost(message);
       }
     } else {
       originalPostMessage(message, targetOrigin);
@@ -266,27 +270,15 @@ $jsBridge
     switch (method) {
       case 'ui/notifications/size-changed':
         final height = params['height'];
-        if (height is num) {
+        if (height is num && mounted) {
           setState(() {
-            _height = height.toDouble().clamp(_minHeight, _maxHeight);
+            _height = height.toDouble().clamp(_minHeight, _maxHeight(context));
           });
         }
         break;
 
       case 'ui/notifications/initialized':
-        debugPrint('MCP WebView: View initialized');
-        _viewReady = true;
-        _sendToolInput();
-        _sendToolResult();
-        break;
-
-      case 'ui/initialize':
-        // View is announcing it's ready — respond with host capabilities
-        // and send tool data. Treat this as the view being ready.
-        debugPrint('MCP WebView: View sent ui/initialize notification, sending host init + tool data');
-        _sendInitialize();
-        // The view is ready since it sent us this — send tool data now
-        // in case ui/notifications/initialized never comes.
+        debugPrint('MCP WebView: View initialized, sending tool data');
         _viewReady = true;
         _sendToolInput();
         _sendToolResult();
@@ -311,31 +303,27 @@ $jsBridge
   ) async {
     switch (method) {
       case 'ui/initialize':
-        // View is sending ui/initialize as a request expecting host capabilities back.
+        // View sends ui/initialize request expecting McpUiInitializeResult.
+        // After receiving this response, the view will send
+        // ui/notifications/initialized, at which point we send tool data.
         debugPrint('MCP WebView: View sent ui/initialize request, returning host capabilities');
-        _initialized = true;
-        // The view is ready since it sent us this — send tool data now.
-        _viewReady = true;
-        // Send tool data after returning the response (async to let response arrive first)
-        Future.delayed(Duration.zero, () {
-          _sendToolInput();
-          _sendToolResult();
-        });
         return {
-          'hostContext': {
-            'theme': 'dark',
-            'locale': 'en',
-          },
-          'hostCapabilities': {
-            'tools/call': true,
-            'resources/read': true,
-            'ui/open-link': true,
-            'ui/message': true,
-            'ui/update-model-context': true,
-          },
+          'protocolVersion': '2026-01-26',
           'hostInfo': {
             'name': 'joey-mcp-client-flutter',
             'version': '1.0.0',
+          },
+          'hostCapabilities': {
+            'openLinks': {},
+            'serverTools': {},
+            'serverResources': {},
+            'logging': {},
+            'message': {},
+            'updateModelContext': {},
+          },
+          'hostContext': {
+            'theme': 'dark',
+            'locale': 'en',
           },
         };
 
@@ -431,39 +419,6 @@ $jsBridge
     return {'contents': contentsList};
   }
 
-  /// Send the ui/initialize handshake to the View
-  void _sendInitialize() {
-    if (_controller == null) return;
-
-    final initResult = {
-      'jsonrpc': '2.0',
-      'method': 'ui/initialize',
-      'params': {
-        'hostContext': {
-          'theme': 'dark',
-          'locale': 'en',
-        },
-        'hostCapabilities': {
-          'tools/call': true,
-          'resources/read': true,
-          'ui/open-link': true,
-          'ui/message': true,
-          'ui/update-model-context': true,
-        },
-        'hostInfo': {
-          'name': 'joey-mcp-client-flutter',
-          'version': '1.0.0',
-        },
-      },
-    };
-
-    final json = jsonEncode(initResult);
-    _safeEvaluateJavascript(
-      'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
-    );
-    _initialized = true;
-  }
-
   /// Send tool input notification to the View
   void _sendToolInput() {
     if (_controller == null || !_viewReady) return;
@@ -541,8 +496,9 @@ $jsBridge
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
+    final clampedHeight = _height.clamp(_minHeight, _maxHeight(context));
     return Container(
-      height: _height,
+      height: clampedHeight,
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       decoration: BoxDecoration(
         border: Border.all(
@@ -596,9 +552,8 @@ $jsBridge
         },
         onLoadStop: (controller, url) {
           debugPrint('MCP WebView: onLoadStop url=$url');
-          if (!_initialized) {
-            _sendInitialize();
-          }
+          // The view will initiate the handshake by sending ui/initialize request.
+          // We don't need to send anything proactively.
         },
         onReceivedError: (controller, request, error) {
           debugPrint('MCP WebView: onReceivedError: ${error.description} (type: ${error.type}) for ${request.url}');

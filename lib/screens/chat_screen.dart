@@ -398,6 +398,8 @@ class _ChatScreenState extends State<ChatScreen>
             mcpClients: _serverManager.mcpClients,
             mcpTools: _serverManager.mcpTools,
             serverNames: _serverManager.serverNames,
+            uiService: _serverManager.uiService,
+            appOnlyTools: _serverManager.appOnlyTools,
           );
 
           // Listen to chat events
@@ -577,6 +579,13 @@ class _ChatScreenState extends State<ChatScreen>
     return const AuthRequiredCard();
   }
 
+  /// Handle a message from an MCP App WebView
+  void _handleUiMessage(String message) {
+    // Insert the message into the text input and trigger send
+    _messageController.text = message;
+    _sendMessage();
+  }
+
   Future<void> _deleteMessage(
     String messageId,
     ConversationProvider provider,
@@ -656,6 +665,8 @@ class _ChatScreenState extends State<ChatScreen>
           mcpClients: _serverManager.mcpClients,
           mcpTools: _serverManager.mcpTools,
           serverNames: _serverManager.serverNames,
+          uiService: _serverManager.uiService,
+          appOnlyTools: _serverManager.appOnlyTools,
         );
 
         _chatService!.events.listen((event) {
@@ -947,6 +958,10 @@ class _ChatScreenState extends State<ChatScreen>
                   onRegenerateLastResponse: _regenerateLastResponse,
                   onUrlElicitationResponse: _handleUrlElicitationResponse,
                   onFormElicitationResponse: _handleFormElicitationResponse,
+                  uiService: _serverManager.uiService,
+                  mcpClients: _serverManager.mcpClients,
+                  appOnlyTools: _serverManager.appOnlyTools,
+                  onUiMessage: _handleUiMessage,
                 ),
               ),
               _buildMessageInput(),
@@ -1022,6 +1037,8 @@ class _ChatScreenState extends State<ChatScreen>
         mcpClients: _serverManager.mcpClients,
         mcpTools: _serverManager.mcpTools,
         serverNames: _serverManager.serverNames,
+        uiService: _serverManager.uiService,
+        appOnlyTools: _serverManager.appOnlyTools,
       );
     }
 

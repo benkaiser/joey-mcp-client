@@ -5,8 +5,10 @@ import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/message.dart';
 import '../models/elicitation.dart';
+import '../models/mcp_app_ui.dart';
 import 'openrouter_service.dart';
 import 'mcp_client_service.dart';
+import 'mcp_app_ui_service.dart';
 import 'default_model_service.dart';
 import 'chat_events.dart';
 import 'sampling_processor.dart';
@@ -43,6 +45,8 @@ class ChatService {
   final Map<String, McpClientService> _mcpClients;
   final Map<String, List<McpTool>> _mcpTools;
   final Map<String, String> _serverNames; // serverId -> server name
+  McpAppUiService? _uiService;
+  final Map<String, List<McpTool>> _appOnlyTools;
   late final SamplingProcessor _samplingProcessor;
 
   ChatService({
@@ -50,10 +54,14 @@ class ChatService {
     required Map<String, McpClientService> mcpClients,
     required Map<String, List<McpTool>> mcpTools,
     Map<String, String>? serverNames,
+    McpAppUiService? uiService,
+    Map<String, List<McpTool>>? appOnlyTools,
   }) : _openRouterService = openRouterService,
        _mcpClients = mcpClients,
        _mcpTools = mcpTools,
-       _serverNames = serverNames ?? {} {
+       _serverNames = serverNames ?? {},
+       _uiService = uiService,
+       _appOnlyTools = appOnlyTools ?? {} {
     _samplingProcessor = SamplingProcessor(
       openRouterService: _openRouterService,
       executeToolCalls: _executeToolCalls,
@@ -144,6 +152,8 @@ class ChatService {
     required Map<String, McpClientService> mcpClients,
     required Map<String, List<McpTool>> mcpTools,
     required Map<String, String> serverNames,
+    McpAppUiService? uiService,
+    Map<String, List<McpTool>>? appOnlyTools,
   }) {
     // Update server names
     _serverNames.clear();
@@ -205,6 +215,16 @@ class ChatService {
     if (!identical(_mcpTools, mcpTools)) {
       _mcpTools.clear();
       _mcpTools.addAll(mcpTools);
+    }
+
+    if (uiService != null) {
+      _uiService = uiService;
+    }
+    if (appOnlyTools != null) {
+      if (!identical(_appOnlyTools, appOnlyTools)) {
+        _appOnlyTools.clear();
+        _appOnlyTools.addAll(appOnlyTools);
+      }
     }
   }
 
@@ -556,6 +576,7 @@ class ChatService {
             toolName: result['toolName'] as String,
             imageData: result['imageData'] as String?,
             audioData: result['audioData'] as String?,
+            uiData: result['uiData'] as String?,
           );
 
           _eventController.add(MessageCreated(message: toolMessage));
@@ -697,7 +718,20 @@ class ChatService {
       String? result;
       String? imageDataJson;
       String? audioDataJson;
-      for (final entry in _mcpTools.entries) {
+      String? uiDataJson;
+
+      // Search both LLM-visible and app-only tools
+      final allToolEntries = <String, List<McpTool>>{};
+      allToolEntries.addAll(_mcpTools);
+      for (final entry in _appOnlyTools.entries) {
+        allToolEntries.update(
+          entry.key,
+          (existing) => [...existing, ...entry.value],
+          ifAbsent: () => entry.value,
+        );
+      }
+
+      for (final entry in allToolEntries.entries) {
         final serverId = entry.key;
         final tools = entry.value;
 
@@ -740,6 +774,39 @@ class ChatService {
               if (audioItems.isNotEmpty) {
                 audioDataJson = jsonEncode(audioItems);
               }
+
+              // Check for UI data
+              if (_uiService != null) {
+                final toolDef = tools.cast<McpTool?>().firstWhere(
+                  (t) => t!.name == toolName && t.hasUi,
+                  orElse: () => null,
+                );
+                if (toolDef != null) {
+                  final uiResource = _uiService!.getResource(toolDef.uiResourceUri!);
+                  if (uiResource != null) {
+                    // Build serializable content list for the UI
+                    final uiContentList = toolResult.content.map((c) {
+                      if (c.type == 'text') return {'type': 'text', 'text': c.text};
+                      if (c.type == 'image') return {'type': 'image', 'data': c.data, 'mimeType': c.mimeType};
+                      if (c.type == 'audio') return {'type': 'audio', 'data': c.data, 'mimeType': c.mimeType};
+                      return {'type': c.type};
+                    }).toList();
+
+                    final uiData = McpAppUiData(
+                      resourceUri: toolDef.uiResourceUri!,
+                      html: uiResource.html,
+                      cspMeta: uiResource.cspMeta,
+                      toolArgs: toolArgs,
+                      toolResultJson: jsonEncode({
+                        'content': uiContentList,
+                        if (toolResult.isError == true) 'isError': true,
+                      }),
+                      serverId: serverId,
+                    );
+                    uiDataJson = jsonEncode(uiData.toJson());
+                  }
+                }
+              }
             }
           } on McpAuthRequiredException catch (e) {
             result = 'Error: Authentication required for MCP server';
@@ -770,6 +837,7 @@ class ChatService {
         'result': finalResult,
         if (imageDataJson != null) 'imageData': imageDataJson,
         if (audioDataJson != null) 'audioData': audioDataJson,
+        if (uiDataJson != null) 'uiData': uiDataJson,
       };
     }).toList();
 
