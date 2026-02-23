@@ -586,6 +586,7 @@ $jsBridge
 
           // Load the HTML
           final html = _buildHtml();
+          debugPrint('MCP WebView: Loading HTML (${html.length} chars), first 500: ${html.substring(0, html.length > 500 ? 500 : html.length)}');
           controller.loadData(
             data: html,
             mimeType: 'text/html',
@@ -594,9 +595,13 @@ $jsBridge
           );
         },
         onLoadStop: (controller, url) {
+          debugPrint('MCP WebView: onLoadStop url=$url');
           if (!_initialized) {
             _sendInitialize();
           }
+        },
+        onReceivedError: (controller, request, error) {
+          debugPrint('MCP WebView: onReceivedError: ${error.description} (type: ${error.type}) for ${request.url}');
         },
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final uri = navigationAction.request.url;
