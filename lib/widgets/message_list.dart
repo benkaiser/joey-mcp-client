@@ -16,7 +16,7 @@ import '../widgets/mcp_app_webview.dart';
 
 /// Widget that renders the message list for a conversation, including
 /// message filtering, index mapping, and per-type rendering logic.
-class MessageList extends StatelessWidget {
+class MessageList extends StatefulWidget {
   // Data
   final String conversationId;
   final bool showThinking;
@@ -78,10 +78,26 @@ class MessageList extends StatelessWidget {
   });
 
   @override
+  State<MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<MessageList> {
+  /// GlobalKeys for McpAppWebView instances, keyed by message ID.
+  /// Using GlobalKey ensures the WebView's platform view and state survive
+  /// parent widget reconstructions (e.g. when ChatScreen does setState).
+  final Map<String, GlobalKey<State<McpAppWebView>>> _webViewKeys = {};
+
+  /// Get or create a GlobalKey for the McpAppWebView associated with a message.
+  GlobalKey<State<McpAppWebView>> _webViewKeyFor(String messageId) {
+    return _webViewKeys.putIfAbsent(
+        messageId, () => GlobalKey<State<McpAppWebView>>());
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Consumer<ConversationProvider>(
       builder: (context, provider, child) {
-        final messages = provider.getMessages(conversationId);
+        final messages = provider.getMessages(widget.conversationId);
 
         if (messages.isEmpty) {
           return Column(
@@ -123,7 +139,7 @@ class MessageList extends StatelessWidget {
                   horizontal: 16.0,
                   vertical: 4.0,
                 ),
-                child: buildCommandPalette(),
+                child: widget.buildCommandPalette(),
               ),
             ],
           );
@@ -163,7 +179,7 @@ class MessageList extends StatelessWidget {
         // (for the regenerate button). We only show regenerate on
         // the final visible assistant bubble, and only when not loading.
         String? lastAssistantContentMessageId;
-        if (!isLoading) {
+        if (!widget.isLoading) {
           for (int i = displayMessages.length - 1; i >= 0; i--) {
             final m = displayMessages[i];
             if (m.role == MessageRole.assistant &&
@@ -177,18 +193,18 @@ class MessageList extends StatelessWidget {
 
         // Calculate total item count
         final hasStreaming =
-            streamingContent.isNotEmpty ||
-            streamingReasoning.isNotEmpty;
-        final hasLoadingIndicator = buildLoadingIndicator != null;
+            widget.streamingContent.isNotEmpty ||
+            widget.streamingReasoning.isNotEmpty;
+        final hasLoadingIndicator = widget.buildLoadingIndicator != null;
         final itemCount =
             displayMessages.length +
             1 + // command palette
             (hasLoadingIndicator ? 1 : 0) +
             (hasStreaming ? 1 : 0) +
-            (authenticationRequired ? 1 : 0);
+            (widget.authenticationRequired ? 1 : 0);
 
         return ListView.builder(
-          controller: scrollController,
+          controller: widget.scrollController,
           padding: const EdgeInsets.all(16),
           reverse: true, // Anchor to bottom, grow upward
           itemCount: itemCount,
@@ -203,7 +219,7 @@ class MessageList extends StatelessWidget {
 
             // Show command palette at index 0 (bottom)
             if (index == 0) {
-              return buildCommandPalette();
+              return widget.buildCommandPalette();
             }
 
             // Shift by 1 for command palette
@@ -211,32 +227,32 @@ class MessageList extends StatelessWidget {
 
             // Show loading indicator right above command palette
             if (hasLoadingIndicator && currentIndex == 0) {
-              return buildLoadingIndicator!();
+              return widget.buildLoadingIndicator!();
             }
             if (hasLoadingIndicator) currentIndex--;
 
             // Show auth required card
-            if (authenticationRequired && currentIndex == 0) {
-              return buildAuthRequiredCard();
+            if (widget.authenticationRequired && currentIndex == 0) {
+              return widget.buildAuthRequiredCard();
             }
-            if (authenticationRequired) currentIndex--;
+            if (widget.authenticationRequired) currentIndex--;
 
             // Show streaming content
             if (hasStreaming && currentIndex == 0) {
               final streamingMessage = Message(
                 id: 'streaming',
-                conversationId: conversationId,
+                conversationId: widget.conversationId,
                 role: MessageRole.assistant,
-                content: streamingContent,
+                content: widget.streamingContent,
                 timestamp: DateTime.now(),
-                reasoning: streamingReasoning.isNotEmpty
-                    ? streamingReasoning
+                reasoning: widget.streamingReasoning.isNotEmpty
+                    ? widget.streamingReasoning
                     : null,
               );
               return MessageBubble(
                 message: streamingMessage,
                 isStreaming: true,
-                showThinking: showThinking,
+                showThinking: widget.showThinking,
                 onDelete: null, // Can't delete while streaming
                 onEdit: null,
               );
@@ -262,9 +278,9 @@ class MessageList extends StatelessWidget {
               return MessageBubble(
                 key: ValueKey(message.id),
                 message: message,
-                showThinking: showThinking,
+                showThinking: widget.showThinking,
                 onDelete: () =>
-                    onDeleteMessage(message.id, provider),
+                    widget.onDeleteMessage(message.id, provider),
                 onEdit: null,
               );
             }
@@ -301,7 +317,7 @@ class MessageList extends StatelessWidget {
                   request: request,
                   responseState: responseState,
                   onRespond: responseState == null
-                      ? (action) => onUrlElicitationResponse(
+                      ? (action) => widget.onUrlElicitationResponse(
                           message.id,
                           request,
                           action,
@@ -316,7 +332,7 @@ class MessageList extends StatelessWidget {
                   submittedContent: submittedContent,
                   onRespond: responseState == null
                       ? (action, content) =>
-                            onFormElicitationResponse(
+                            widget.onFormElicitationResponse(
                               message.id,
                               request,
                               action,
@@ -337,11 +353,11 @@ class MessageList extends StatelessWidget {
                   );
 
                   // Find the MCP client for this server
-                  final mcpClient = mcpClients?[uiData.serverId];
+                  final mcpClient = widget.mcpClients?[uiData.serverId];
 
                   // Build flat map of app-only tools for this server
                   Map<String, McpTool>? serverAppOnlyTools;
-                  final appOnlyList = appOnlyTools?[uiData.serverId];
+                  final appOnlyList = widget.appOnlyTools?[uiData.serverId];
                   if (appOnlyList != null) {
                     serverAppOnlyTools = {
                       for (final t in appOnlyList) t.name: t,
@@ -354,12 +370,13 @@ class MessageList extends StatelessWidget {
                     children: [
                       ThinkingIndicator(message: message),
                       McpAppWebView(
+                        key: _webViewKeyFor(message.id),
                         uiData: uiData,
                         messageId: message.id,
                         mcpClient: mcpClient,
-                        uiService: uiService,
+                        uiService: widget.uiService,
                         appOnlyTools: serverAppOnlyTools,
-                        onUiMessage: onUiMessage,
+                        onUiMessage: widget.onUiMessage,
                       ),
                     ],
                   );
@@ -370,7 +387,7 @@ class MessageList extends StatelessWidget {
               }
 
               // Show minimal indicator when thinking is disabled
-              if (!showThinking) {
+              if (!widget.showThinking) {
                 // Still show images/audio even when thinking is hidden
                 if (message.imageData != null ||
                     message.audioData != null) {
@@ -418,9 +435,9 @@ class MessageList extends StatelessWidget {
               return MessageBubble(
                 key: ValueKey(message.id),
                 message: formattedMessage,
-                showThinking: showThinking,
+                showThinking: widget.showThinking,
                 onDelete: () =>
-                    onDeleteMessage(formattedMessage.id, provider),
+                    widget.onDeleteMessage(formattedMessage.id, provider),
                 onEdit: null, // Tool messages can't be edited
               );
             }
@@ -428,16 +445,16 @@ class MessageList extends StatelessWidget {
             // Format MCP notification messages
             if (message.role == MessageRole.mcpNotification) {
               // Show minimal indicator when thinking is disabled
-              if (!showThinking) {
+              if (!widget.showThinking) {
                 return ThinkingIndicator(key: ValueKey(message.id), message: message);
               }
               // Full notification display is handled by MessageBubble
               return MessageBubble(
                 key: ValueKey(message.id),
                 message: message,
-                showThinking: showThinking,
+                showThinking: widget.showThinking,
                 onDelete: () =>
-                    onDeleteMessage(message.id, provider),
+                    widget.onDeleteMessage(message.id, provider),
                 onEdit:
                     null, // Notification messages can't be edited
               );
@@ -447,7 +464,7 @@ class MessageList extends StatelessWidget {
             if (message.role == MessageRole.assistant &&
                 message.toolCallData != null) {
               // Show minimal indicator when thinking is disabled
-              if (!showThinking) {
+              if (!widget.showThinking) {
                 return ThinkingIndicator(key: ValueKey(message.id), message: message);
               }
 
@@ -530,9 +547,9 @@ class MessageList extends StatelessWidget {
               return MessageBubble(
                 key: ValueKey(message.id),
                 message: formattedMessage,
-                showThinking: showThinking,
+                showThinking: widget.showThinking,
                 onDelete: () =>
-                    onDeleteMessage(formattedMessage.id, provider),
+                    widget.onDeleteMessage(formattedMessage.id, provider),
                 onEdit: null, // Tool call messages can't be edited
               );
             }
@@ -540,14 +557,14 @@ class MessageList extends StatelessWidget {
             return MessageBubble(
               key: ValueKey(message.id),
               message: message,
-              showThinking: showThinking,
-              onDelete: () => onDeleteMessage(message.id, provider),
+              showThinking: widget.showThinking,
+              onDelete: () => widget.onDeleteMessage(message.id, provider),
               onEdit: message.role == MessageRole.user
-                  ? () => onEditMessage(message, provider)
+                  ? () => widget.onEditMessage(message, provider)
                   : null,
               onRegenerate:
                   message.id == lastAssistantContentMessageId
-                  ? () => onRegenerateLastResponse(provider)
+                  ? () => widget.onRegenerateLastResponse(provider)
                   : null,
             );
           },
