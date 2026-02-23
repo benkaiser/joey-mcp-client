@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:mcp_dart/mcp_dart.dart' show TextContent;
 import '../models/conversation.dart';
 import '../models/message.dart';
+import '../models/mcp_app_ui.dart';
 import '../models/mcp_server.dart';
 import '../models/elicitation.dart';
 import '../models/pending_image.dart';
@@ -16,6 +17,8 @@ import '../services/database_service.dart';
 import '../services/chat_service.dart';
 import '../services/mcp_oauth_manager.dart';
 import '../services/mcp_server_manager.dart';
+import '../services/mcp_app_ui_service.dart';
+import '../services/mcp_client_service.dart';
 import '../utils/audio_attachment_handler.dart';
 import '../utils/image_attachment_handler.dart';
 import 'chat_event_handler.dart';
@@ -26,6 +29,7 @@ import '../widgets/loading_status_indicator.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/message_input.dart';
 import '../widgets/message_list.dart';
+import '../widgets/mcp_app_webview.dart';
 import '../widgets/mcp_oauth_card.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
 import '../widgets/usage_info_button.dart';
@@ -68,6 +72,31 @@ class _ChatScreenState extends State<ChatScreen>
   final AudioAttachmentHandler _audioHandler = AudioAttachmentHandler();
   final McpOAuthManager _oauthManager = McpOAuthManager();
   final McpServerManager _serverManager = McpServerManager();
+
+  // Display mode state for MCP App WebViews
+  /// GlobalKeys for McpAppWebView instances, keyed by message ID.
+  /// Owned here so the same key can be used both inline (MessageList) and
+  /// in overlay positions (fullscreen/PIP), enabling reparenting without
+  /// recreating the WebView.
+  final Map<String, GlobalKey<State<McpAppWebView>>> _webViewKeys = {};
+
+  /// Current display mode per message ID: 'inline' | 'fullscreen' | 'pip' | 'hidden'
+  final Map<String, String> _webViewDisplayModes = {};
+
+  /// View-declared available display modes per message ID
+  final Map<String, List<String>> _viewAvailableDisplayModes = {};
+
+  /// LayerLinks for CompositedTransformTarget/Follower pairs (inline mode).
+  /// The target is placed in MessageList's placeholder; the follower wraps
+  /// the WebView in the ChatScreen Stack so it visually tracks the placeholder
+  /// without ever moving in the widget tree.
+  final Map<String, LayerLink> _webViewLayerLinks = {};
+
+  /// Current reported heights per WebView (from size-changed notifications)
+  final Map<String, double> _webViewHeights = {};
+
+  /// Host-supported display modes
+  static const List<String> _hostAvailableDisplayModes = ['inline', 'fullscreen', 'pip'];
 
   // --- ChatEventHandlerMixin interface ---
   @override
@@ -576,6 +605,70 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  /// Get or create a GlobalKey for the McpAppWebView associated with a message.
+  GlobalKey<State<McpAppWebView>> _webViewKeyFor(String messageId) {
+    return _webViewKeys.putIfAbsent(
+        messageId, () => GlobalKey<State<McpAppWebView>>());
+  }
+
+  /// Get or create a LayerLink for the inline anchor of a WebView.
+  LayerLink _layerLinkFor(String messageId) {
+    return _webViewLayerLinks.putIfAbsent(messageId, () => LayerLink());
+  }
+
+  /// Handle height change reported by a WebView.
+  void _handleWebViewHeightChanged(String messageId, double height) {
+    if (_webViewHeights[messageId] != height) {
+      setState(() {
+        _webViewHeights[messageId] = height;
+      });
+    }
+  }
+
+  /// Set display mode for a WebView (host-side UI control).
+  /// Validates that the view supports the requested mode before switching.
+  /// Set [viewRequested] to true when the view itself requested the mode
+  /// (via ui/request-display-mode), which bypasses the view-capabilities check
+  /// since the view obviously supports any mode it requests.
+  void _setDisplayMode(String messageId, String mode, {bool viewRequested = false}) {
+    // 'hidden' is always allowed (host-only feature)
+    if (mode != 'inline' && mode != 'hidden' && !viewRequested) {
+      final viewModes = _viewAvailableDisplayModes[messageId] ?? [];
+      if (!viewModes.contains(mode)) {
+        // View doesn't support this mode, fall back to inline
+        debugPrint('ChatScreen: View $messageId does not support mode "$mode" (declared: $viewModes), falling back to inline');
+        mode = 'inline';
+      }
+    }
+
+    // Only one fullscreen at a time — return any existing fullscreen to inline
+    if (mode == 'fullscreen') {
+      final existingFullscreen = _webViewDisplayModes.entries
+          .where((e) => e.value == 'fullscreen' && e.key != messageId)
+          .toList();
+      for (final entry in existingFullscreen) {
+        _webViewDisplayModes[entry.key] = 'inline';
+      }
+    }
+
+    debugPrint('ChatScreen: Setting display mode for $messageId to "$mode"');
+    setState(() {
+      _webViewDisplayModes[messageId] = mode;
+    });
+  }
+
+  /// Handle a display mode request from a WebView (programmatic, via ui/request-display-mode).
+  void _handleRequestDisplayMode(String messageId, String requestedMode) {
+    _setDisplayMode(messageId, requestedMode, viewRequested: true);
+  }
+
+  /// Handle view capabilities received from a WebView (via ui/initialize).
+  void _handleViewCapabilitiesReceived(String messageId, List<String> modes) {
+    setState(() {
+      _viewAvailableDisplayModes[messageId] = modes;
+    });
+  }
+
   Widget _buildAuthRequiredCard() {
     return const AuthRequiredCard();
   }
@@ -964,59 +1057,145 @@ class _ChatScreenState extends State<ChatScreen>
               ),
             ],
           ),
-          body: Column(
+          body: Stack(
             children: [
-              // Show OAuth banner if servers need authentication
-              if (_oauthManager.serversNeedingOAuth.any((s) =>
-                  _oauthManager.serverOAuthStatus[s.id] != McpOAuthCardStatus.completed))
-                McpOAuthBanner(
-                  serversNeedingAuth: _oauthManager.serversNeedingOAuth,
-                  serverOAuthStatus: _oauthManager.serverOAuthStatus,
-                  onAuthenticate: (server) => _oauthManager.startServerOAuth(
-                    server,
-                    mcpServers: _serverManager.mcpServers,
+              Column(
+                children: [
+                  // Show OAuth banner if servers need authentication
+                  if (_oauthManager.serversNeedingOAuth.any((s) =>
+                      _oauthManager.serverOAuthStatus[s.id] != McpOAuthCardStatus.completed))
+                    McpOAuthBanner(
+                      serversNeedingAuth: _oauthManager.serversNeedingOAuth,
+                      serverOAuthStatus: _oauthManager.serverOAuthStatus,
+                      onAuthenticate: (server) => _oauthManager.startServerOAuth(
+                        server,
+                        mcpServers: _serverManager.mcpServers,
+                      ),
+                      onSkip: (server) => _oauthManager.skipServerOAuth(server),
+                      onDismiss: () {
+                        _oauthManager.dismissAll();
+                      },
+                    ),
+                  Expanded(
+                    child: MessageList(
+                      conversationId: widget.conversation.id,
+                      showThinking: _showThinking,
+                      streamingContent: _streamingContent,
+                      streamingReasoning: _streamingReasoning,
+                      isLoading: _isLoading,
+                      authenticationRequired: _authenticationRequired,
+                      scrollController: _scrollController,
+                      buildCommandPalette: _buildCommandPalette,
+                      buildAuthRequiredCard: _buildAuthRequiredCard,
+                      buildLoadingIndicator: _isLoading
+                          ? () => LoadingStatusIndicator(
+                                currentToolName: _currentToolName,
+                                isToolExecuting: _isToolExecuting,
+                                currentProgress: _currentProgress,
+                              )
+                          : null,
+                      onDeleteMessage: _deleteMessage,
+                      onEditMessage: _editMessage,
+                      onRegenerateLastResponse: _regenerateLastResponse,
+                      onUrlElicitationResponse: _handleUrlElicitationResponse,
+                      onFormElicitationResponse: _handleFormElicitationResponse,
+                      webViewDisplayModes: _webViewDisplayModes,
+                      viewAvailableDisplayModes: _viewAvailableDisplayModes,
+                      webViewHeights: _webViewHeights,
+                      onSetDisplayMode: _setDisplayMode,
+                      layerLinkFor: _layerLinkFor,
+                      hostAvailableDisplayModes: _hostAvailableDisplayModes,
+                    ),
                   ),
-                  onSkip: (server) => _oauthManager.skipServerOAuth(server),
-                  onDismiss: () {
-                    _oauthManager.dismissAll();
-                  },
-                ),
-              Expanded(
-                child: MessageList(
-                  conversationId: widget.conversation.id,
-                  showThinking: _showThinking,
-                  streamingContent: _streamingContent,
-                  streamingReasoning: _streamingReasoning,
-                  isLoading: _isLoading,
-                  authenticationRequired: _authenticationRequired,
-                  scrollController: _scrollController,
-                  buildCommandPalette: _buildCommandPalette,
-                  buildAuthRequiredCard: _buildAuthRequiredCard,
-                  buildLoadingIndicator: _isLoading
-                      ? () => LoadingStatusIndicator(
-                            currentToolName: _currentToolName,
-                            isToolExecuting: _isToolExecuting,
-                            currentProgress: _currentProgress,
-                          )
-                      : null,
-                  onDeleteMessage: _deleteMessage,
-                  onEditMessage: _editMessage,
-                  onRegenerateLastResponse: _regenerateLastResponse,
-                  onUrlElicitationResponse: _handleUrlElicitationResponse,
-                  onFormElicitationResponse: _handleFormElicitationResponse,
-                  uiService: _serverManager.uiService,
-                  mcpClients: _serverManager.mcpClients,
-                  appOnlyTools: _serverManager.appOnlyTools,
-                  onUiMessage: _handleUiMessage,
-                  onUpdateModelContext: _handleUpdateModelContext,
-                ),
+                  _buildMessageInput(),
+                ],
               ),
-              _buildMessageInput(),
+              // All active WebViews rendered here so they never move in the tree
+              ..._buildWebViewOverlays(provider),
             ],
           ),
         );
       },
     );
+  }
+
+  /// Build all active (non-hidden) WebView overlays.
+  /// Every WebView is always rendered here in the Stack — never in MessageList —
+  /// so switching display modes doesn't cause the platform view to be recreated.
+  /// Each WebView is wrapped in a _WebViewHost with a stable ValueKey so that
+  /// mode changes only affect the host's build output, not the WebView itself.
+  List<Widget> _buildWebViewOverlays(ConversationProvider provider) {
+    final messages = provider.getMessages(widget.conversation.id);
+
+    // Find all messages that have UI data (active WebViews)
+    final uiMessages = messages.where((m) => m.uiData != null).toList();
+    if (uiMessages.isEmpty) return [];
+
+    final widgets = <Widget>[];
+
+    for (final message in uiMessages) {
+      final messageId = message.id;
+      final currentMode = _webViewDisplayModes[messageId] ?? 'inline';
+
+      // Hidden mode: don't render the WebView at all (unmounted)
+      if (currentMode == 'hidden') continue;
+
+      McpAppUiData uiData;
+      try {
+        uiData = McpAppUiData.fromJson(
+          jsonDecode(message.uiData!) as Map<String, dynamic>,
+        );
+      } catch (e) {
+        debugPrint('ChatScreen: Failed to parse uiData for $messageId: $e');
+        continue;
+      }
+
+      final mcpClient = _serverManager.mcpClients[uiData.serverId];
+      Map<String, McpTool>? serverAppOnlyTools;
+      final appOnlyList = _serverManager.appOnlyTools[uiData.serverId];
+      if (appOnlyList != null) {
+        serverAppOnlyTools = { for (final t in appOnlyList) t.name: t };
+      }
+
+      final viewModes = _viewAvailableDisplayModes[messageId] ?? [];
+      final inlineHeight = _webViewHeights[messageId] ?? 300.0;
+
+      widgets.add(
+        _WebViewHost(
+          // Stable key per message — never changes across mode switches
+          key: ValueKey('webview_host_$messageId'),
+          messageId: messageId,
+          uiData: uiData,
+          mcpClient: mcpClient,
+          uiService: _serverManager.uiService,
+          appOnlyTools: serverAppOnlyTools,
+          displayMode: currentMode,
+          hostAvailableDisplayModes: _hostAvailableDisplayModes,
+          viewAvailableDisplayModes: viewModes,
+          inlineHeight: inlineHeight,
+          layerLink: _layerLinkFor(messageId),
+          onUiMessage: _handleUiMessage,
+          onUpdateModelContext: _handleUpdateModelContext,
+          onRequestDisplayMode: _handleRequestDisplayMode,
+          onViewCapabilitiesReceived: _handleViewCapabilitiesReceived,
+          onHeightChanged: _handleWebViewHeightChanged,
+          onSetDisplayMode: _setDisplayMode,
+          toolName: _toolNameFromUri(uiData.resourceUri),
+          webViewKey: _webViewKeyFor(messageId),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  /// Extract tool name from URI like "ui://server/toolName"
+  String _toolNameFromUri(String uri) {
+    final parts = Uri.tryParse(uri);
+    if (parts != null && parts.pathSegments.isNotEmpty) {
+      return parts.pathSegments.last;
+    }
+    return uri;
   }
 
   Widget _buildCommandPalette() {
@@ -1189,5 +1368,512 @@ class _ChatScreenState extends State<ChatScreen>
       orElse: () => widget.conversation,
     );
     return conversation.model;
+  }
+}
+
+/// A stable host widget for a single McpAppWebView.
+///
+/// **Critical design constraint:** Flutter platform views (InAppWebView) are
+/// destroyed and recreated whenever their element is unmounted. To prevent this
+/// when switching display modes, the [build] method must always return the
+/// **exact same widget-type chain** from [_WebViewHostState] down to the
+/// [McpAppWebView]. Changing ancestor widget types (e.g. swapping
+/// `CompositedTransformFollower` for `Material`) would cause Flutter's element
+/// reconciliation to unmount the subtree, destroying the native WebView.
+///
+/// The approach: every mode returns
+///   Positioned → CompositedTransformFollower → SizedBox → Material → SafeArea
+///     → Stack → [ Column → [toolbar, Expanded → webView], ...pip chrome ]
+/// Only the *properties* of these widgets change (constraints, link, colors);
+/// the widget *types* are identical across modes.
+class _WebViewHost extends StatefulWidget {
+  final String messageId;
+  final McpAppUiData uiData;
+  final McpClientService? mcpClient;
+  final McpAppUiService? uiService;
+  final Map<String, McpTool>? appOnlyTools;
+  final String displayMode;
+  final List<String> hostAvailableDisplayModes;
+  final List<String> viewAvailableDisplayModes;
+  final double inlineHeight;
+  final LayerLink layerLink;
+  final String toolName;
+  final GlobalKey webViewKey;
+  final void Function(String message, {List<PendingImage> images})? onUiMessage;
+  final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
+  final void Function(String messageId, String requestedMode)? onRequestDisplayMode;
+  final void Function(String messageId, List<String> modes)? onViewCapabilitiesReceived;
+  final void Function(String messageId, double height)? onHeightChanged;
+  final void Function(String messageId, String mode) onSetDisplayMode;
+
+  const _WebViewHost({
+    super.key,
+    required this.messageId,
+    required this.uiData,
+    this.mcpClient,
+    this.uiService,
+    this.appOnlyTools,
+    required this.displayMode,
+    required this.hostAvailableDisplayModes,
+    required this.viewAvailableDisplayModes,
+    required this.inlineHeight,
+    required this.layerLink,
+    required this.toolName,
+    required this.webViewKey,
+    this.onUiMessage,
+    this.onUpdateModelContext,
+    this.onRequestDisplayMode,
+    this.onViewCapabilitiesReceived,
+    this.onHeightChanged,
+    required this.onSetDisplayMode,
+  });
+
+  @override
+  State<_WebViewHost> createState() => _WebViewHostState();
+}
+
+class _WebViewHostState extends State<_WebViewHost> {
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('_WebViewHost [${widget.messageId}]: initState (hashCode=$hashCode)');
+  }
+
+  @override
+  void dispose() {
+    debugPrint('_WebViewHost [${widget.messageId}]: dispose (hashCode=$hashCode)');
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WebViewHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.displayMode != widget.displayMode) {
+      debugPrint('_WebViewHost [${widget.messageId}]: displayMode changed ${oldWidget.displayMode} → ${widget.displayMode} (hashCode=$hashCode)');
+    }
+  }
+
+  // PIP drag / resize state (kept here so it survives mode switches)
+  Offset _pipOffset = const Offset(16, 16);
+  double _pipWidth = 280;
+  double _pipHeight = 200;
+  static const double _pipHeaderHeight = 32;
+  static const double _pipMinWidth = 180;
+  static const double _pipMinHeight = 120;
+  static const double _pipEdgePadding = 8;
+  static const double _pipTopPadding = 56;
+  static const double _pipResizeHandleSize = 16;
+
+  void _clampPipOffset(Size parentSize) {
+    final totalHeight = _pipHeight + _pipHeaderHeight;
+    final maxRight = parentSize.width - _pipWidth - _pipEdgePadding;
+    final maxBottom = parentSize.height - totalHeight - _pipTopPadding;
+    _pipOffset = Offset(
+      _pipOffset.dx.clamp(_pipEdgePadding, maxRight.clamp(_pipEdgePadding, double.infinity)),
+      _pipOffset.dy.clamp(_pipEdgePadding, maxBottom.clamp(_pipEdgePadding, double.infinity)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final webView = McpAppWebView(
+      key: widget.webViewKey,
+      uiData: widget.uiData,
+      messageId: widget.messageId,
+      mcpClient: widget.mcpClient,
+      uiService: widget.uiService,
+      appOnlyTools: widget.appOnlyTools,
+      onUiMessage: widget.onUiMessage,
+      onUpdateModelContext: widget.onUpdateModelContext,
+      displayMode: widget.displayMode,
+      hostAvailableDisplayModes: widget.hostAvailableDisplayModes,
+      onRequestDisplayMode: widget.onRequestDisplayMode,
+      onViewCapabilitiesReceived: widget.onViewCapabilitiesReceived,
+      onHeightChanged: widget.onHeightChanged,
+    );
+
+    final bool isFullscreen = widget.displayMode == 'fullscreen';
+    final bool isPip = widget.displayMode == 'pip';
+    final supportsPip = widget.viewAvailableDisplayModes.contains('pip');
+    final supportsFullscreen = widget.viewAvailableDisplayModes.contains('fullscreen');
+
+    // Simple approach: let the WebView resize naturally per mode.
+    // The McpAppWebView caches its InAppWebView instance in initState
+    // so the same widget is always returned from build().
+
+    if (isFullscreen) {
+      return Positioned.fill(
+        child: Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildFullscreenToolbar(context, supportsPip),
+                Expanded(child: webView),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isPip) {
+      final screenSize = MediaQuery.of(context).size;
+      _clampPipOffset(screenSize);
+      final maxPipW = screenSize.width * 0.9;
+      final maxPipH = screenSize.height * 0.8;
+
+      return Positioned(
+        right: _pipOffset.dx,
+        bottom: _pipOffset.dy,
+        width: _pipWidth,
+        height: _pipHeight + _pipHeaderHeight,
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  _buildPipHeader(context, supportsFullscreen),
+                  Expanded(child: webView),
+                ],
+              ),
+              ..._buildPipResizeHandles(screenSize, maxPipW, maxPipH),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Inline mode — cap height at 40% of screen.
+    // The CompositedTransformFollower aligns its child to the Target in the
+    // MessageList.  The Target sits inside the ListView's 16px padding, so
+    // it is (stackWidth - 32px) wide.  We give the Container that same width
+    // so the WebView + border + scrollbar fit exactly within the message
+    // content area.
+    final screenHeight = MediaQuery.of(context).size.height;
+    final clampedInlineHeight = widget.inlineHeight.clamp(50.0, screenHeight * 0.4);
+
+    // Determine which mode buttons to show
+    final showFullscreen = widget.viewAvailableDisplayModes.contains('fullscreen')
+        && widget.hostAvailableDisplayModes.contains('fullscreen');
+    final showPip = widget.viewAvailableDisplayModes.contains('pip')
+        && widget.hostAvailableDisplayModes.contains('pip');
+
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: CompositedTransformFollower(
+        link: widget.layerLink,
+        showWhenUnlinked: false,
+        child: Container(
+          // screenWidth - 32 for ListView padding, - 32 for extra left+right
+          // margin to visually inset the WebView within the message area.
+          width: MediaQuery.of(context).size.width - 64.0,
+          height: clampedInlineHeight,
+          margin: const EdgeInsets.only(left: 16.0, top: 4.0, bottom: 4.0),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          // Use a ClipRRect child instead of clipBehavior on Container,
+          // so the clip doesn't cut into the border's rounded corners.
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: Stack(
+              children: [
+                Positioned.fill(child: webView),
+                // Bottom-anchored floating toolbar
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Theme.of(context).colorScheme.surface.withValues(alpha: 0.0),
+                          Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+                        ],
+                      ),
+                    ),
+                    padding: const EdgeInsets.only(top: 12.0, bottom: 6.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showFullscreen)
+                          _InlineToolbarButton(
+                            icon: Icons.fullscreen,
+                            tooltip: 'Fullscreen',
+                            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'fullscreen'),
+                          ),
+                        if (showPip)
+                          _InlineToolbarButton(
+                            icon: Icons.picture_in_picture_alt,
+                            tooltip: 'Picture-in-picture',
+                            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'pip'),
+                          ),
+                        _InlineToolbarButton(
+                          icon: Icons.visibility_off_outlined,
+                          tooltip: 'Hide',
+                          onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullscreenToolbar(BuildContext context, bool supportsPip) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.fullscreen_exit),
+            tooltip: 'Return inline',
+            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'inline'),
+          ),
+          const Spacer(),
+          if (supportsPip)
+            IconButton(
+              icon: const Icon(Icons.picture_in_picture_alt),
+              tooltip: 'Picture-in-picture',
+              onPressed: () => widget.onSetDisplayMode(widget.messageId, 'pip'),
+            ),
+          IconButton(
+            icon: const Icon(Icons.visibility_off_outlined),
+            tooltip: 'Hide',
+            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPipHeader(BuildContext context, bool supportsFullscreen) {
+    return GestureDetector(
+      onPanUpdate: (details) {
+        setState(() {
+          _pipOffset = Offset(
+            _pipOffset.dx - details.delta.dx,
+            _pipOffset.dy - details.delta.dy,
+          );
+          _clampPipOffset(MediaQuery.of(context).size);
+        });
+      },
+      child: Container(
+        height: _pipHeaderHeight,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            Icon(Icons.drag_indicator, size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                widget.toolName,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (supportsFullscreen)
+              _PipHeaderButton(
+                icon: Icons.fullscreen,
+                tooltip: 'Fullscreen',
+                onPressed: () => widget.onSetDisplayMode(widget.messageId, 'fullscreen'),
+              ),
+            _PipHeaderButton(
+              icon: Icons.fullscreen_exit,
+              tooltip: 'Return inline',
+              onPressed: () => widget.onSetDisplayMode(widget.messageId, 'inline'),
+            ),
+            _PipHeaderButton(
+              icon: Icons.visibility_off_outlined,
+              tooltip: 'Hide',
+              onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  /// Build resize handles for PIP mode (corner + edge handles).
+  List<Widget> _buildPipResizeHandles(Size screenSize, double maxW, double maxH) {
+    Widget corner(Alignment alignment, SystemMouseCursor cursor,
+        void Function(DragUpdateDetails) onPan) {
+      return Positioned(
+        left: alignment.x < 0 ? 0 : null,
+        right: alignment.x > 0 ? 0 : null,
+        top: alignment.y < 0 ? 0 : null,
+        bottom: alignment.y > 0 ? 0 : null,
+        width: _pipResizeHandleSize,
+        height: _pipResizeHandleSize,
+        child: GestureDetector(
+          onPanUpdate: (d) => setState(() { onPan(d); _clampPipOffset(screenSize); }),
+          child: MouseRegion(cursor: cursor, child: const SizedBox.expand()),
+        ),
+      );
+    }
+
+    Widget edge({
+      double? left, double? right, double? top, double? bottom,
+      double? width, double? height,
+      required SystemMouseCursor cursor,
+      required void Function(DragUpdateDetails) onPan,
+    }) {
+      return Positioned(
+        left: left, right: right, top: top, bottom: bottom,
+        width: width, height: height,
+        child: GestureDetector(
+          onPanUpdate: (d) => setState(() { onPan(d); _clampPipOffset(screenSize); }),
+          child: MouseRegion(cursor: cursor, child: const SizedBox.expand()),
+        ),
+      );
+    }
+
+    return [
+      // Corners
+      corner(Alignment.topLeft, SystemMouseCursors.resizeUpLeft, (d) {
+        _pipWidth = (_pipWidth - d.delta.dx).clamp(_pipMinWidth, maxW);
+        _pipHeight = (_pipHeight - d.delta.dy).clamp(_pipMinHeight, maxH);
+      }),
+      corner(Alignment.bottomLeft, SystemMouseCursors.resizeDownLeft, (d) {
+        _pipWidth = (_pipWidth - d.delta.dx).clamp(_pipMinWidth, maxW);
+        final nh = (_pipHeight + d.delta.dy).clamp(_pipMinHeight, maxH);
+        _pipOffset = Offset(_pipOffset.dx, _pipOffset.dy - (nh - _pipHeight));
+        _pipHeight = nh;
+      }),
+      corner(Alignment.topRight, SystemMouseCursors.resizeUpRight, (d) {
+        final nw = (_pipWidth + d.delta.dx).clamp(_pipMinWidth, maxW);
+        _pipOffset = Offset(_pipOffset.dx - (nw - _pipWidth), _pipOffset.dy);
+        _pipWidth = nw;
+        _pipHeight = (_pipHeight - d.delta.dy).clamp(_pipMinHeight, maxH);
+      }),
+      corner(Alignment.bottomRight, SystemMouseCursors.resizeDownRight, (d) {
+        final nw = (_pipWidth + d.delta.dx).clamp(_pipMinWidth, maxW);
+        _pipOffset = Offset(_pipOffset.dx - (nw - _pipWidth), _pipOffset.dy);
+        _pipWidth = nw;
+        final nh = (_pipHeight + d.delta.dy).clamp(_pipMinHeight, maxH);
+        _pipOffset = Offset(_pipOffset.dx, _pipOffset.dy - (nh - _pipHeight));
+        _pipHeight = nh;
+      }),
+      // Edges
+      edge(left: 0, top: _pipResizeHandleSize, width: _pipResizeHandleSize / 2,
+          bottom: _pipResizeHandleSize, cursor: SystemMouseCursors.resizeLeft,
+          onPan: (d) { _pipWidth = (_pipWidth - d.delta.dx).clamp(_pipMinWidth, maxW); }),
+      edge(top: 0, left: _pipResizeHandleSize, right: _pipResizeHandleSize,
+          height: _pipResizeHandleSize / 2, cursor: SystemMouseCursors.resizeUp,
+          onPan: (d) { _pipHeight = (_pipHeight - d.delta.dy).clamp(_pipMinHeight, maxH); }),
+      edge(right: 0, top: _pipResizeHandleSize, width: _pipResizeHandleSize / 2,
+          bottom: _pipResizeHandleSize, cursor: SystemMouseCursors.resizeRight,
+          onPan: (d) {
+            final nw = (_pipWidth + d.delta.dx).clamp(_pipMinWidth, maxW);
+            _pipOffset = Offset(_pipOffset.dx - (nw - _pipWidth), _pipOffset.dy);
+            _pipWidth = nw;
+          }),
+      edge(bottom: 0, left: _pipResizeHandleSize, right: _pipResizeHandleSize,
+          height: _pipResizeHandleSize / 2, cursor: SystemMouseCursors.resizeDown,
+          onPan: (d) {
+            final nh = (_pipHeight + d.delta.dy).clamp(_pipMinHeight, maxH);
+            _pipOffset = Offset(_pipOffset.dx, _pipOffset.dy - (nh - _pipHeight));
+            _pipHeight = nh;
+          }),
+    ];
+  }
+}
+
+/// Compact icon button used in the PIP header bar.
+class _PipHeaderButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _PipHeaderButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: IconButton(
+        icon: Icon(icon, size: 14),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// Icon button used in the bottom-anchored floating toolbar on inline WebViews.
+/// Note: no Tooltip wrapper — Tooltip internally uses OverlayPortal which
+/// triggers a debug assertion when nested inside CompositedTransformFollower.
+class _InlineToolbarButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _InlineToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: tooltip,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
+            child: Icon(
+              icon,
+              size: 18,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

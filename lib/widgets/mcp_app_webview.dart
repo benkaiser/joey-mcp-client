@@ -20,6 +20,11 @@ class McpAppWebView extends StatefulWidget {
   final Map<String, McpTool>? appOnlyTools;
   final void Function(String message, {List<PendingImage> images})? onUiMessage;
   final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
+  final String displayMode;
+  final List<String> hostAvailableDisplayModes;
+  final void Function(String messageId, String requestedMode)? onRequestDisplayMode;
+  final void Function(String messageId, List<String> modes)? onViewCapabilitiesReceived;
+  final void Function(String messageId, double height)? onHeightChanged;
 
   const McpAppWebView({
     super.key,
@@ -30,6 +35,11 @@ class McpAppWebView extends StatefulWidget {
     this.appOnlyTools,
     this.onUiMessage,
     this.onUpdateModelContext,
+    this.displayMode = 'inline',
+    this.hostAvailableDisplayModes = const ['inline', 'fullscreen', 'pip'],
+    this.onRequestDisplayMode,
+    this.onViewCapabilitiesReceived,
+    this.onHeightChanged,
   });
 
   @override
@@ -39,23 +49,66 @@ class McpAppWebView extends StatefulWidget {
 class _McpAppWebViewState extends State<McpAppWebView>
     with AutomaticKeepAliveClientMixin {
   InAppWebViewController? _controller;
-  double _height = 300.0;
   bool _viewReady = false;
   bool _disposed = false;
   static const double _minHeight = 50.0;
 
-  /// Max height capped at 90% of available chat area to prevent
-  /// the WebView from consuming the entire scroll view.
+  /// The InAppWebView widget, created once and reused across rebuilds.
+  /// This is critical: platform views are destroyed when their element is
+  /// unmounted, so we must return the *same widget instance* from [build]
+  /// to guarantee Flutter reuses the element rather than recreating it.
+  late final InAppWebView _webViewWidget;
+
+  /// Max height capped at 40% of available screen to prevent
+  /// the WebView from consuming the entire scroll view in inline mode.
   double _maxHeight(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    return screenHeight * 0.9;
+    return screenHeight * 0.4;
   }
 
   @override
   bool get wantKeepAlive => true;
 
   @override
+  void initState() {
+    super.initState();
+    debugPrint('MCP WebView [${widget.messageId}]: initState (hashCode=$hashCode)');
+    _webViewWidget = _createWebView();
+  }
+
+  @override
+  void didUpdateWidget(covariant McpAppWebView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.displayMode != widget.displayMode) {
+      debugPrint('MCP WebView [${widget.messageId}]: displayMode changed ${oldWidget.displayMode} → ${widget.displayMode} (hashCode=$hashCode)');
+      _sendHostContextChanged();
+    }
+  }
+
+  /// Send ui/notifications/host-context-changed with updated hostContext fields.
+  void _sendHostContextChanged() {
+    if (_controller == null || !_viewReady) return;
+
+    final notification = {
+      'jsonrpc': '2.0',
+      'method': 'ui/notifications/host-context-changed',
+      'params': {
+        'hostContext': {
+          'displayMode': widget.displayMode,
+          'availableDisplayModes': widget.hostAvailableDisplayModes,
+        },
+      },
+    };
+
+    final json = jsonEncode(notification);
+    _safeEvaluateJavascript(
+      'if(window.__mcpBridgeNotification) window.__mcpBridgeNotification(\'${_escapeJs(json)}\');',
+    );
+  }
+
+  @override
   void dispose() {
+    debugPrint('MCP WebView [${widget.messageId}]: dispose (hashCode=$hashCode)');
     _disposed = true;
     _sendTeardown();
     super.dispose();
@@ -275,9 +328,8 @@ $jsBridge
       case 'ui/notifications/size-changed':
         final height = params['height'];
         if (height is num && mounted) {
-          setState(() {
-            _height = height.toDouble().clamp(_minHeight, _maxHeight(context));
-          });
+          final clampedHeight = height.toDouble().clamp(_minHeight, _maxHeight(context));
+          widget.onHeightChanged?.call(widget.messageId, clampedHeight);
         }
         break;
 
@@ -311,6 +363,27 @@ $jsBridge
         // After receiving this response, the view will send
         // ui/notifications/initialized, at which point we send tool data.
         debugPrint('MCP WebView: View sent ui/initialize request, returning host capabilities');
+
+        // Read view's declared available display modes from appCapabilities.
+        // If the view doesn't declare any, default to all host-supported modes
+        // so the user can still switch display modes.
+        final appCapabilities = params['appCapabilities'] as Map<String, dynamic>?;
+        final viewModes = appCapabilities?['availableDisplayModes'] as List<dynamic>?;
+        if (viewModes != null) {
+          final modesList = viewModes.map((e) => e.toString()).toList();
+          debugPrint('MCP WebView: View declared availableDisplayModes: $modesList');
+          widget.onViewCapabilitiesReceived?.call(widget.messageId, modesList);
+        } else {
+          // View didn't declare display modes — assume it supports all modes
+          // the host offers, so the user gets fullscreen/PIP/hide controls.
+          debugPrint('MCP WebView: View did not declare availableDisplayModes, '
+              'defaulting to host modes: ${widget.hostAvailableDisplayModes}');
+          widget.onViewCapabilitiesReceived?.call(
+            widget.messageId,
+            List<String>.from(widget.hostAvailableDisplayModes),
+          );
+        }
+
         return {
           'protocolVersion': '2026-01-26',
           'hostInfo': {
@@ -328,8 +401,21 @@ $jsBridge
           'hostContext': {
             'theme': 'dark',
             'locale': 'en',
+            'displayMode': widget.displayMode,
+            'availableDisplayModes': widget.hostAvailableDisplayModes,
           },
         };
+
+      case 'ui/request-display-mode':
+        final requestedMode = params['mode'] as String?;
+        if (requestedMode == null) {
+          throw Exception('Missing mode parameter');
+        }
+        // Delegate to ChatScreen which validates and applies the mode
+        widget.onRequestDisplayMode?.call(widget.messageId, requestedMode);
+        // Return the current mode — ChatScreen will update the prop which
+        // triggers didUpdateWidget → host-context-changed notification
+        return {'mode': requestedMode};
 
       case 'tools/call':
         return _handleToolCall(params);
@@ -538,22 +624,9 @@ $jsBridge
     return uri;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context); // Required by AutomaticKeepAliveClientMixin
-    final clampedHeight = _height.clamp(_minHeight, _maxHeight(context));
-    return Container(
-      height: clampedHeight,
-      margin: const EdgeInsets.symmetric(vertical: 4.0),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color:
-              Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InAppWebView(
+  /// Create the InAppWebView widget once. Called from [initState].
+  InAppWebView _createWebView() {
+    return InAppWebView(
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           transparentBackground: true,
@@ -562,8 +635,11 @@ $jsBridge
           useHybridComposition: true,
           allowsInlineMediaPlayback: true,
           mediaPlaybackRequiresUserGesture: false,
+          verticalScrollBarEnabled: true,
+          horizontalScrollBarEnabled: false,
         ),
         onWebViewCreated: (controller) {
+          debugPrint('MCP WebView [${widget.messageId}]: onWebViewCreated (hashCode=$hashCode, controller=${controller.hashCode})');
           _controller = controller;
 
           // Register the bridge handler
@@ -587,7 +663,7 @@ $jsBridge
 
           // Load the HTML
           final html = _buildHtml();
-          debugPrint('MCP WebView: Loading HTML (${html.length} chars), first 500: ${html.substring(0, html.length > 500 ? 500 : html.length)}');
+          debugPrint('MCP WebView: Loading HTML (${html.length} chars)');
           controller.loadData(
             data: html,
             mimeType: 'text/html',
@@ -623,7 +699,18 @@ $jsBridge
           debugPrint(
               'MCP WebView Console [${consoleMessage.messageLevel}]: ${consoleMessage.message}');
         },
-      ),
-    );
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required by AutomaticKeepAliveClientMixin
+
+    // IMPORTANT: Always return the same widget with no size-changing wrappers.
+    // On macOS, changing the layout size of a platform view (InAppWebView)
+    // causes the native WKWebView to be deallocated and recreated, losing all
+    // state.  The parent (_WebViewHostState) is responsible for clipping and
+    // positioning; this widget just fills whatever space it's given.
+    return _webViewWidget;
   }
 }

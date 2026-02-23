@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/message.dart';
 import '../models/elicitation.dart';
-import '../models/pending_image.dart';
 import '../providers/conversation_provider.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/thinking_indicator.dart';
@@ -11,9 +10,6 @@ import '../widgets/tool_result_media.dart';
 import '../widgets/elicitation_url_card.dart';
 import '../widgets/elicitation_form_card.dart';
 import '../models/mcp_app_ui.dart';
-import '../services/mcp_app_ui_service.dart';
-import '../services/mcp_client_service.dart';
-import '../widgets/mcp_app_webview.dart';
 
 /// Widget that renders the message list for a conversation, including
 /// message filtering, index mapping, and per-type rendering logic.
@@ -49,12 +45,13 @@ class MessageList extends StatefulWidget {
     Map<String, dynamic>? content,
   ) onFormElicitationResponse;
 
-  // MCP App UI support
-  final McpAppUiService? uiService;
-  final Map<String, McpClientService>? mcpClients;
-  final Map<String, List<McpTool>>? appOnlyTools;
-  final void Function(String message, {List<PendingImage> images})? onUiMessage;
-  final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
+  // Display mode support
+  final Map<String, String> webViewDisplayModes;
+  final Map<String, List<String>> viewAvailableDisplayModes;
+  final Map<String, double> webViewHeights;
+  final void Function(String messageId, String mode) onSetDisplayMode;
+  final LayerLink Function(String messageId) layerLinkFor;
+  final List<String> hostAvailableDisplayModes;
 
   const MessageList({
     super.key,
@@ -73,11 +70,12 @@ class MessageList extends StatefulWidget {
     required this.onRegenerateLastResponse,
     required this.onUrlElicitationResponse,
     required this.onFormElicitationResponse,
-    this.uiService,
-    this.mcpClients,
-    this.appOnlyTools,
-    this.onUiMessage,
-    this.onUpdateModelContext,
+    required this.webViewDisplayModes,
+    required this.viewAvailableDisplayModes,
+    required this.webViewHeights,
+    required this.onSetDisplayMode,
+    required this.layerLinkFor,
+    this.hostAvailableDisplayModes = const ['inline', 'fullscreen', 'pip'],
   });
 
   @override
@@ -85,16 +83,6 @@ class MessageList extends StatefulWidget {
 }
 
 class _MessageListState extends State<MessageList> {
-  /// GlobalKeys for McpAppWebView instances, keyed by message ID.
-  /// Using GlobalKey ensures the WebView's platform view and state survive
-  /// parent widget reconstructions (e.g. when ChatScreen does setState).
-  final Map<String, GlobalKey<State<McpAppWebView>>> _webViewKeys = {};
-
-  /// Get or create a GlobalKey for the McpAppWebView associated with a message.
-  GlobalKey<State<McpAppWebView>> _webViewKeyFor(String messageId) {
-    return _webViewKeys.putIfAbsent(
-        messageId, () => GlobalKey<State<McpAppWebView>>());
-  }
 
   /// Build full context display for mcpAppContext messages when thinking is shown.
   Widget _buildFullContextDisplay(BuildContext context, Message contextMessage) {
@@ -180,6 +168,95 @@ class _MessageListState extends State<MessageList> {
               crossAxisAlignment: CrossAxisAlignment.start,
               spacing: 8,
               children: contentWidgets,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build control bar above an inline WebView with display mode buttons.
+
+  /// Build a placeholder for a WebView that is in fullscreen or PIP mode.
+  Widget _buildDisplayModePlaceholder(BuildContext context, String messageId, String currentMode) {
+    final modeLabel = currentMode == 'fullscreen' ? 'fullscreen' : 'picture-in-picture';
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            currentMode == 'fullscreen' ? Icons.fullscreen : Icons.picture_in_picture_alt,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'View is in $modeLabel mode',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => widget.onSetDisplayMode(messageId, 'inline'),
+            icon: const Icon(Icons.fullscreen_exit, size: 14),
+            label: const Text('Return inline'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a placeholder for a hidden WebView.
+  Widget _buildHiddenPlaceholder(BuildContext context, String messageId) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.visibility_off_outlined,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'View is hidden',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => widget.onSetDisplayMode(messageId, 'inline'),
+            icon: const Icon(Icons.visibility, size: 14),
+            label: const Text('Show'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+              textStyle: const TextStyle(fontSize: 12),
             ),
           ),
         ],
@@ -445,21 +522,10 @@ class _MessageListState extends State<MessageList> {
               // Check for MCP App UI data
               if (message.uiData != null) {
                 try {
-                  final uiData = McpAppUiData.fromJson(
+                  // Validate uiData can be parsed
+                  McpAppUiData.fromJson(
                     jsonDecode(message.uiData!) as Map<String, dynamic>,
                   );
-
-                  // Find the MCP client for this server
-                  final mcpClient = widget.mcpClients?[uiData.serverId];
-
-                  // Build flat map of app-only tools for this server
-                  Map<String, McpTool>? serverAppOnlyTools;
-                  final appOnlyList = widget.appOnlyTools?[uiData.serverId];
-                  if (appOnlyList != null) {
-                    serverAppOnlyTools = {
-                      for (final t in appOnlyList) t.name: t,
-                    };
-                  }
 
                   // Look up associated mcpAppContext message
                   final contextMessage = messages.cast<Message?>().firstWhere(
@@ -467,20 +533,59 @@ class _MessageListState extends State<MessageList> {
                     orElse: () => null,
                   );
 
+                  // Determine current display mode for this WebView
+                  final currentDisplayMode = widget.webViewDisplayModes[message.id] ?? 'inline';
+
+                  // If hidden, render a compact "show" placeholder — no WebView mounted
+                  if (currentDisplayMode == 'hidden') {
+                    return Column(
+                      key: ValueKey(message.id),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ThinkingIndicator(message: message),
+                        _buildHiddenPlaceholder(context, message.id),
+                        if (contextMessage != null) ...[
+                          if (!widget.showThinking)
+                            ThinkingIndicator(message: contextMessage)
+                          else
+                            _buildFullContextDisplay(context, contextMessage),
+                        ],
+                      ],
+                    );
+                  }
+
+                  // If not inline (fullscreen or pip), render a placeholder
+                  if (currentDisplayMode != 'inline') {
+                    return Column(
+                      key: ValueKey(message.id),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ThinkingIndicator(message: message),
+                        _buildDisplayModePlaceholder(context, message.id, currentDisplayMode),
+                        if (contextMessage != null) ...[
+                          if (!widget.showThinking)
+                            ThinkingIndicator(message: contextMessage)
+                          else
+                            _buildFullContextDisplay(context, contextMessage),
+                        ],
+                      ],
+                    );
+                  }
+
+                  // Inline mode: render anchor placeholder (WebView is in ChatScreen Stack)
+                  final rawInlineHeight = widget.webViewHeights[message.id] ?? 300.0;
+                  final screenHeight = MediaQuery.of(context).size.height;
+                  final inlineHeight = rawInlineHeight.clamp(50.0, screenHeight * 0.4);
                   return Column(
                     key: ValueKey(message.id),
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ThinkingIndicator(message: message),
-                      McpAppWebView(
-                        key: _webViewKeyFor(message.id),
-                        uiData: uiData,
-                        messageId: message.id,
-                        mcpClient: mcpClient,
-                        uiService: widget.uiService,
-                        appOnlyTools: serverAppOnlyTools,
-                        onUiMessage: widget.onUiMessage,
-                        onUpdateModelContext: widget.onUpdateModelContext,
+                      CompositedTransformTarget(
+                        link: widget.layerLinkFor(message.id),
+                        child: SizedBox(
+                          height: inlineHeight + 8.0, // +8 for vertical margin in the overlay
+                        ),
                       ),
                       if (contextMessage != null) ...[
                         if (!widget.showThinking)
@@ -683,3 +788,5 @@ class _MessageListState extends State<MessageList> {
     );
   }
 }
+
+/// Small icon button used in the display mode control bar above inline WebViews.

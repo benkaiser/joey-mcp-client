@@ -40,6 +40,7 @@ class McpAppUiData {
   final String? toolResultJson;   // Serialized tool result for ui/notifications/tool-result
   final String serverId;
   final String? displayMode;      // e.g., 'inline', 'fullscreen'
+  final List<String>? availableDisplayModes; // View's declared supported display modes
 
   McpAppUiData({
     required this.resourceUri,
@@ -49,6 +50,7 @@ class McpAppUiData {
     this.toolResultJson,
     required this.serverId,
     this.displayMode,
+    this.availableDisplayModes,
   });
 
   Map<String, dynamic> toJson() => {
@@ -59,6 +61,7 @@ class McpAppUiData {
     if (toolResultJson != null) 'toolResultJson': toolResultJson,
     'serverId': serverId,
     if (displayMode != null) 'displayMode': displayMode,
+    if (availableDisplayModes != null) 'availableDisplayModes': availableDisplayModes,
   };
 
   factory McpAppUiData.fromJson(Map<String, dynamic> json) => McpAppUiData(
@@ -69,5 +72,8 @@ class McpAppUiData {
     toolResultJson: json['toolResultJson'] as String?,
     serverId: json['serverId'] as String,
     displayMode: json['displayMode'] as String?,
+    availableDisplayModes: (json['availableDisplayModes'] as List<dynamic>?)
+        ?.map((e) => e as String)
+        .toList(),
   );
 }
