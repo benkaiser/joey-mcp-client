@@ -222,6 +222,7 @@ $jsBridge
   /// Handle incoming JSON-RPC messages from the View
   Future<String?> _handleBridgeMessage(String messageJson) async {
     try {
+      debugPrint('MCP WebView: Bridge message received: $messageJson');
       final message = jsonDecode(messageJson) as Map<String, dynamic>;
       final method = message['method'] as String?;
       final params = message['params'] as Map<String, dynamic>? ?? {};
@@ -261,6 +262,7 @@ $jsBridge
 
   /// Handle JSON-RPC notifications from the View
   void _handleNotification(String method, Map<String, dynamic> params) {
+    debugPrint('MCP WebView: Received notification: $method');
     switch (method) {
       case 'ui/notifications/size-changed':
         final height = params['height'];
@@ -276,6 +278,15 @@ $jsBridge
         _viewReady = true;
         _sendToolInput();
         _sendToolResult();
+        break;
+
+      case 'ui/initialize':
+        // View is announcing it's ready — respond with host capabilities.
+        // Some views send this as a notification, others as a request.
+        debugPrint('MCP WebView: View sent ui/initialize notification, sending host init');
+        if (!_initialized) {
+          _sendInitialize();
+        }
         break;
 
       case 'notifications/message':
@@ -296,6 +307,28 @@ $jsBridge
     Map<String, dynamic> params,
   ) async {
     switch (method) {
+      case 'ui/initialize':
+        // View is sending ui/initialize as a request expecting host capabilities back.
+        debugPrint('MCP WebView: View sent ui/initialize request, returning host capabilities');
+        _initialized = true;
+        return {
+          'hostContext': {
+            'theme': 'dark',
+            'locale': 'en',
+          },
+          'hostCapabilities': {
+            'tools/call': true,
+            'resources/read': true,
+            'ui/open-link': true,
+            'ui/message': true,
+            'ui/update-model-context': true,
+          },
+          'hostInfo': {
+            'name': 'joey-mcp-client-flutter',
+            'version': '1.0.0',
+          },
+        };
+
       case 'tools/call':
         return _handleToolCall(params);
 
