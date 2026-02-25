@@ -4,10 +4,10 @@
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/joey-mcp-client/id6759186174">
-    <img src="metadata/en-US/images/app-store-badge.svg" alt="Download on the App Store" height="58">
+    <img src="metadata/en-US/images/app-store-badge.svg" alt="Download on the App Store">
   </a>
   <a href="https://play.google.com/store/apps/details?id=com.kaiserapps.joey">
-    <img src="metadata/en-US/images/google-play-badge.png" alt="Get it on Google Play" height="58">
+    <img src="metadata/en-US/images/google-play-badge.svg" alt="Get it on Google Play">
   </a>
 </p>
 
