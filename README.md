@@ -8,7 +8,7 @@
   </a>
   &nbsp;
   <a href="https://play.google.com/store/apps/details?id=com.kaiserapps.joey">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Get it on Google Play" height="50">
+    <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="75">
   </a>
 </p>
 
