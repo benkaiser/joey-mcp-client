@@ -1,6 +1,6 @@
 # Joey MCP Client
 
-![Joey MCP Client Feature Graphic](metadata/en-US/images/featureGraphic.png)
+![Joey MCP Client](metadata/en-US/images/product_hunt/gallery_1_any_model.png)
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/joey-mcp-client/id6759186174">
