@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:golden_screenshot/golden_screenshot.dart';
 import 'package:joey_mcp_client_flutter/models/conversation.dart';
 import 'package:joey_mcp_client_flutter/models/message.dart';
+import 'package:joey_mcp_client_flutter/utils/date_formatter.dart';
 import 'package:joey_mcp_client_flutter/widgets/message_bubble.dart';
 import 'package:joey_mcp_client_flutter/widgets/thinking_indicator.dart';
 
@@ -662,7 +663,7 @@ class _MockConversationListItem extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            _formatDate(conversation.updatedAt),
+            DateFormatter.formatConversationDate(conversation.updatedAt),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -671,17 +672,6 @@ class _MockConversationListItem extends StatelessWidget {
       ),
       onTap: () {},
     );
-  }
-
-  String _formatDate(DateTime updatedAt) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(updatedAt.year, updatedAt.month, updatedAt.day);
-    final diff = today.difference(date).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    if (diff < 7) return '$diff days ago';
-    return '${updatedAt.month}/${updatedAt.day}/${updatedAt.year}';
   }
 }
 
@@ -693,6 +683,7 @@ class _MockChatScreen extends StatelessWidget {
   final bool showThinking;
   final int mcpServerCount;
   final bool scrollToTop;
+  final String? pricingText;
 
   const _MockChatScreen({
     required this.title,
@@ -701,6 +692,7 @@ class _MockChatScreen extends StatelessWidget {
     this.showThinking = false,
     this.mcpServerCount = 0,
     this.scrollToTop = false,
+    this.pricingText,
   });
 
   @override
@@ -741,19 +733,17 @@ class _MockChatScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (mcpServerCount > 0) ...[
+                if (pricingText != null) ...[
                   const SizedBox(width: 8),
-                  Icon(
-                    Icons.dns,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$mcpServerCount MCP',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontSize: 11,
+                  Flexible(
+                    child: Text(
+                      pricingText!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface
+                            .withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -764,20 +754,44 @@ class _MockChatScreen extends StatelessWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
+            icon: const Icon(Icons.bar_chart_rounded),
+            tooltip: 'Conversation usage',
+            onPressed: () {},
+          ),
+          IconButton(
             icon: Icon(
               showThinking ? Icons.visibility : Icons.visibility_off,
             ),
             tooltip: showThinking ? 'Hide thinking' : 'Show thinking',
             onPressed: () {},
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.share),
-            tooltip: 'Share',
-            onPressed: () {},
+            tooltip: 'Share / Export',
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'share_text',
+                child: ListTile(
+                  leading: Icon(Icons.text_snippet),
+                  title: Text('Share as Text'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export_json',
+                child: ListTile(
+                  leading: Icon(Icons.download),
+                  title: Text('Export as JSON'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.note_add),
-            tooltip: 'New conversation',
+            tooltip: 'Start new conversation',
             onPressed: () {},
           ),
         ],
@@ -837,57 +851,93 @@ class _MockChatScreen extends StatelessWidget {
   Widget _buildCommandPalette(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          if (mcpServerCount > 0)
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            if (mcpServerCount > 0) ...[
+              ActionChip(
+                avatar: Icon(
+                  Icons.auto_awesome,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                label: const Text('Prompts'),
+                onPressed: () {},
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             ActionChip(
               avatar: Icon(
-                Icons.auto_awesome,
+                Icons.dns,
                 size: 18,
-                color: Theme.of(context).colorScheme.primary,
+                color: mcpServerCount > 0
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              label: const Text('Prompts'),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    mcpServerCount > 0
+                        ? 'MCP Servers ($mcpServerCount)'
+                        : 'MCP Servers',
+                  ),
+                  if (mcpServerCount > 0) ...[
+                    const SizedBox(width: 6),
+                    // Status dots — show all connected (green)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          '$mcpServerCount',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
               onPressed: () {},
               side: BorderSide(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                color: mcpServerCount > 0
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                    : Theme.of(context).colorScheme.outlineVariant,
               ),
             ),
-          ActionChip(
-            avatar: Icon(
-              Icons.dns,
-              size: 18,
-              color: mcpServerCount > 0
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            label: Text(
-              mcpServerCount > 0
-                  ? 'MCP Servers ($mcpServerCount)'
-                  : 'MCP Servers',
-            ),
-            onPressed: () {},
-            side: BorderSide(
-              color: mcpServerCount > 0
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-                  : Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
-          if (mcpServerCount > 0)
-            ActionChip(
-              avatar: Icon(
-                Icons.bug_report_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (mcpServerCount > 0) ...[
+              const SizedBox(width: 8),
+              ActionChip(
+                avatar: Icon(
+                  Icons.bug_report_outlined,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                label: const Text('Debug'),
+                onPressed: () {},
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
               ),
-              label: const Text('Debug'),
-              onPressed: () {},
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1040,12 +1090,50 @@ class _MockChatScreen extends StatelessWidget {
       child: SafeArea(
         child: Row(
           children: [
-            IconButton(
+            PopupMenuButton<String>(
               icon: Icon(
-                Icons.add_photo_alternate_outlined,
+                Icons.attach_file,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              onPressed: () {},
+              tooltip: 'Attach media',
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'gallery',
+                  child: ListTile(
+                    leading: Icon(Icons.photo_library_outlined),
+                    title: Text('Photo Library'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'camera',
+                  child: ListTile(
+                    leading: Icon(Icons.camera_alt_outlined),
+                    title: Text('Camera'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'audio_file',
+                  child: ListTile(
+                    leading: Icon(Icons.audio_file_outlined),
+                    title: Text('Audio File'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'record',
+                  child: ListTile(
+                    leading: Icon(Icons.mic_outlined),
+                    title: Text('Record Audio'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
             ),
             Expanded(
               child: TextField(
@@ -1060,7 +1148,9 @@ class _MockChatScreen extends StatelessWidget {
                     vertical: 12,
                   ),
                 ),
-                maxLines: null,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.newline,
               ),
             ),
             const SizedBox(width: 8),
@@ -1169,6 +1259,7 @@ void main() {
         messages: _nutritionToolMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1180,6 +1271,7 @@ void main() {
         messages: _habitTrackingMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1191,6 +1283,7 @@ void main() {
         messages: _knowledgeBaseMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.0015/1K in · \$0.01/1K out',
       ),
     );
 
@@ -1202,6 +1295,7 @@ void main() {
         messages: _mermaidMessages(),
         mcpServerCount: 1,
         scrollToTop: true,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1211,6 +1305,7 @@ void main() {
         title: 'Hiking trip planning',
         model: 'anthropic/claude-sonnet-4',
         messages: _imageAnalysisMessages(),
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
   });
@@ -1229,6 +1324,7 @@ void main() {
         messages: _nutritionToolMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1240,6 +1336,7 @@ void main() {
         messages: _habitTrackingMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1251,6 +1348,7 @@ void main() {
         messages: _knowledgeBaseMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.0015/1K in · \$0.01/1K out',
       ),
     );
 
@@ -1262,6 +1360,7 @@ void main() {
         messages: _mermaidMessages(),
         mcpServerCount: 1,
         scrollToTop: true,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1271,6 +1370,7 @@ void main() {
         title: 'Hiking trip planning',
         model: 'anthropic/claude-sonnet-4',
         messages: _imageAnalysisMessages(),
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
   });
@@ -1289,6 +1389,7 @@ void main() {
         messages: _nutritionToolMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1300,6 +1401,7 @@ void main() {
         messages: _habitTrackingMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1311,6 +1413,7 @@ void main() {
         messages: _knowledgeBaseMessages(),
         showThinking: false,
         mcpServerCount: 1,
+        pricingText: '\$0.0015/1K in · \$0.01/1K out',
       ),
     );
 
@@ -1322,6 +1425,7 @@ void main() {
         messages: _mermaidMessages(),
         mcpServerCount: 1,
         scrollToTop: true,
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
 
@@ -1331,6 +1435,7 @@ void main() {
         title: 'Hiking trip planning',
         model: 'anthropic/claude-sonnet-4',
         messages: _imageAnalysisMessages(),
+        pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
     );
   });
