@@ -197,16 +197,7 @@
         0 0 80px rgba(45, 212, 191, 0.05);
     }
     .iphone-frame .frame-shell::before {
-      content: '';
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 100px;
-      height: 28px;
-      background: #0a0a0a;
-      border-radius: 0 0 18px 18px;
-      z-index: 2;
+      display: none;
     }
     .iphone-frame .screen {
       border-radius: 32px;
@@ -436,11 +427,6 @@
       .feature-row { flex-direction: column !important; gap: 48px; text-align: center; }
       .feature-row .feature-list { align-items: center; }
       .iphone-frame { width: 240px; }
-      .iphone-frame .frame-shell::before {
-        width: 72px;
-        height: 20px;
-        border-radius: 0 0 12px 12px;
-      }
       .nav-links { display: none; }
     }
 
