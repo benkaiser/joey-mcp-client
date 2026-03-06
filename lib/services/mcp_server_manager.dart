@@ -126,6 +126,12 @@ class McpServerManager extends ChangeNotifier {
           );
           freshClient.onAuthRequired = client.onAuthRequired;
           freshClient.onSessionReestablished = client.onSessionReestablished;
+          freshClient.onElicitationRequest = client.onElicitationRequest;
+          freshClient.onSamplingRequest = client.onSamplingRequest;
+          freshClient.onProgressNotification = client.onProgressNotification;
+          freshClient.onGenericNotification = client.onGenericNotification;
+          freshClient.onToolsListChanged = client.onToolsListChanged;
+          freshClient.onResourcesListChanged = client.onResourcesListChanged;
           await freshClient.initialize(); // No session ID
           tools = await freshClient.listTools();
           // Replace client reference for the rest of setup

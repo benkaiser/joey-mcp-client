@@ -178,9 +178,10 @@ class McpClientService {
         print('MCP: Session ID: ${this.sessionId}');
       }
     } on StreamableHttpError catch (e) {
-      // Handle 404: session expired, retry without session ID
-      if (e.code == 404 && sessionId != null) {
-        print('MCP: Session expired (404), retrying with fresh session...');
+      // Handle session resumption failures: any HTTP error (400, 404, 409, etc.)
+      // when we were trying to resume means the session is gone — retry fresh.
+      if (sessionId != null) {
+        print('MCP: Session resumption failed (${e.code}), retrying with fresh session...');
         await _client?.close();
         await _transport?.close();
         _client = null;

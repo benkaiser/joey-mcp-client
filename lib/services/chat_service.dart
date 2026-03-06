@@ -159,11 +159,10 @@ class ChatService {
     _serverNames.clear();
     _serverNames.addAll(serverNames);
 
-    // Register handlers for any new clients
+    // Register handlers for all clients (instance may have been replaced
+    // e.g. after session re-initialization in McpServerManager).
     for (final entry in mcpClients.entries) {
       final serverId = entry.key;
-      if (_mcpClients.containsKey(serverId)) continue; // Already registered
-
       final client = entry.value;
       client.setServerId(serverId);
       client.onSamplingRequest = _handleSamplingRequest;
