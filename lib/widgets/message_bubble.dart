@@ -210,7 +210,9 @@ class MessageBubble extends StatelessWidget {
                               if (message.content.isNotEmpty)
                                 SmoothMarkdown(
                                   key: ValueKey(message.id),
-                                  data: message.content,
+                                  data: isStreaming
+                                      ? '${message.content} ▊'
+                                      : message.content,
                                   selectable: true,
                                   useRepaintBoundary: false,
                                   useEnhancedComponents: true,
@@ -301,19 +303,6 @@ class MessageBubble extends StatelessWidget {
                                   audioDataJson: message.audioData!,
                                   messageId: message.id,
                                 ),
-                              if (isStreaming) ...[
-                                const SizedBox(height: 4),
-                                Container(
-                                  width: 8,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
