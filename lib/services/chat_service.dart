@@ -541,6 +541,9 @@ class ChatService {
       } on OpenRouterPaymentRequiredException {
         _eventController.add(PaymentRequired());
         rethrow;
+      } on OpenRouterRateLimitException catch (e) {
+        _eventController.add(RateLimitExceeded(message: e.message));
+        rethrow;
       } catch (e) {
         _eventController.add(ErrorOccurred(error: e.toString()));
         rethrow;

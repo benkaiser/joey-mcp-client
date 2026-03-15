@@ -52,6 +52,15 @@ class OpenRouterPaymentRequiredException implements Exception {
   String toString() => 'OpenRouterPaymentRequiredException: $message';
 }
 
+/// Exception thrown when a rate limit is hit (HTTP 429)
+class OpenRouterRateLimitException implements Exception {
+  final String message;
+  OpenRouterRateLimitException(this.message);
+
+  @override
+  String toString() => 'OpenRouterRateLimitException: $message';
+}
+
 class OpenRouterService {
   static const String _apiKeyKey = 'openrouter_api_key';
   static const String _authUrl = 'https://openrouter.ai/auth';
@@ -245,6 +254,20 @@ class OpenRouterService {
         throw OpenRouterPaymentRequiredException(
           'Insufficient credits. Please add credits to your OpenRouter account.',
         );
+      }
+      if (e.response?.statusCode == 429) {
+        print('OpenRouter: 429 Rate Limited');
+        String message = 'Rate limited. Please wait a moment and try again.';
+        try {
+          final responseData = e.response?.data;
+          if (responseData is Map) {
+            final raw = responseData['error']?['metadata']?['raw'];
+            if (raw is String && raw.isNotEmpty) {
+              message = raw;
+            }
+          }
+        } catch (_) {}
+        throw OpenRouterRateLimitException(message);
       }
       throw Exception('Error making chat completion request: ${e.message}');
     } catch (e) {
@@ -513,6 +536,20 @@ class OpenRouterService {
         throw OpenRouterPaymentRequiredException(
           'Insufficient credits. Please add credits to your OpenRouter account.',
         );
+      }
+      if (e.response?.statusCode == 429) {
+        print('OpenRouter: 429 Rate Limited');
+        String message = 'Rate limited. Please wait a moment and try again.';
+        try {
+          final responseData = e.response?.data;
+          if (responseData is Map) {
+            final raw = responseData['error']?['metadata']?['raw'];
+            if (raw is String && raw.isNotEmpty) {
+              message = raw;
+            }
+          }
+        } catch (_) {}
+        throw OpenRouterRateLimitException(message);
       }
       throw Exception(
         'Error making streaming chat completion request: ${e.message}',

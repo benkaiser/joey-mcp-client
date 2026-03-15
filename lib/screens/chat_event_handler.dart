@@ -136,6 +136,15 @@ mixin ChatEventHandlerMixin on State<ChatScreen> {
         isToolExecutingValue = false;
       });
       _showPaymentRequiredDialog();
+    } else if (event is RateLimitExceeded) {
+      setState(() {
+        isLoadingValue = false;
+        streamingContentValue = '';
+        streamingReasoningValue = '';
+        currentToolNameValue = null;
+        isToolExecutingValue = false;
+      });
+      _showRateLimitDialog(event.message);
     } else if (event is ErrorOccurred) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -208,6 +217,29 @@ mixin ChatEventHandlerMixin on State<ChatScreen> {
             },
             icon: const Icon(Icons.open_in_new),
             label: const Text('Add Credits'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show a dialog when a rate limit is hit
+  void _showRateLimitDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.speed, color: Colors.orange),
+            SizedBox(width: 8),
+            Expanded(child: Text('Rate Limited')),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
           ),
         ],
       ),

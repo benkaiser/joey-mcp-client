@@ -7,6 +7,7 @@ import '../providers/conversation_provider.dart';
 import '../models/conversation.dart';
 import '../services/default_model_service.dart';
 import '../services/database_service.dart';
+import '../services/background_chat_manager.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
 import '../utils/date_formatter.dart';
 import 'chat_screen.dart';
@@ -29,7 +30,18 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Timer? _searchDebounce;
 
   @override
+  void initState() {
+    super.initState();
+    BackgroundChatManager.instance.addListener(_onBackgroundChatChanged);
+  }
+
+  void _onBackgroundChatChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    BackgroundChatManager.instance.removeListener(_onBackgroundChatChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _pageFocusNode.dispose();
@@ -357,7 +369,15 @@ class _ConversationListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: CircleAvatar(child: Icon(Icons.chat, size: 20)),
+      leading: BackgroundChatManager.instance.isActive(conversation.id)
+          ? const CircleAvatar(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : CircleAvatar(child: Icon(Icons.chat, size: 20)),
       title: searchQuery != null && searchQuery!.isNotEmpty
           ? _HighlightedText(
               text: conversation.title,

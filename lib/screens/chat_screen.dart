@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../services/database_service.dart';
 import '../services/chat_service.dart';
 import '../services/mcp_oauth_manager.dart';
 import '../services/mcp_server_manager.dart';
+import '../services/background_chat_manager.dart';
 import '../services/mcp_app_ui_service.dart';
 import '../services/mcp_client_service.dart';
 import '../utils/audio_attachment_handler.dart';
@@ -71,8 +73,15 @@ class _ChatScreenState extends State<ChatScreen>
   // Delegates
   final ImageAttachmentHandler _imageHandler = ImageAttachmentHandler();
   final AudioAttachmentHandler _audioHandler = AudioAttachmentHandler();
-  final McpOAuthManager _oauthManager = McpOAuthManager();
-  final McpServerManager _serverManager = McpServerManager();
+  McpOAuthManager _oauthManager = McpOAuthManager();
+  McpServerManager _serverManager = McpServerManager();
+
+  // Cached provider reference for use in dispose()
+  ConversationProvider? _cachedProvider;
+  // Stream subscription for chat events (so we can cancel on dispose)
+  StreamSubscription? _chatEventSubscription;
+  // Manual disposed flag for async safety
+  bool _disposed = false;
 
   // Display mode state for MCP App WebViews
   /// GlobalKeys for McpAppWebView instances, keyed by message ID.
@@ -176,6 +185,22 @@ class _ChatScreenState extends State<ChatScreen>
     _loadShowThinking();
     _focusNode.onKeyEvent = _handleKeyEvent;
 
+    // Check if there's a background chat to reattach
+    final bgChat = BackgroundChatManager.instance.detach(widget.conversation.id);
+    final reattached = bgChat != null;
+    if (bgChat != null) {
+      _chatService = bgChat.chatService;
+      _serverManager = bgChat.serverManager;
+      _oauthManager = bgChat.oauthManager;
+      _isLoading = true;
+
+      // Re-subscribe to events
+      final provider = context.read<ConversationProvider>();
+      _chatEventSubscription = _chatService!.events.listen((event) {
+        handleChatEvent(event, provider);
+      });
+    }
+
     // Wire up image handler
     _imageHandler.onStateChanged = () => setState(() {});
 
@@ -251,7 +276,15 @@ class _ChatScreenState extends State<ChatScreen>
         provider.addTransientMessage(connectedMessage);
       }
     };
-    _serverManager.loadMcpServers(widget.conversation.id);
+    if (!reattached) {
+      _serverManager.loadMcpServers(widget.conversation.id);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _cachedProvider = context.read<ConversationProvider>();
   }
 
   void _onMcpStateChanged() {
@@ -315,15 +348,36 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    _disposed = true;
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
-    _chatService?.dispose();
     _audioHandler.dispose();
     _oauthManager.removeListener(_onMcpStateChanged);
     _serverManager.removeListener(_onMcpStateChanged);
-    _oauthManager.dispose();
-    _serverManager.dispose();
+
+    // Cancel the UI event subscription so no more setState calls fire
+    _chatEventSubscription?.cancel();
+    _chatEventSubscription = null;
+
+    // If agentic loop is still running, hand off to background manager
+    if (_isLoading && _chatService != null && _cachedProvider != null) {
+      BackgroundChatManager.instance.register(
+        ActiveChat(
+          chatService: _chatService!,
+          serverManager: _serverManager,
+          oauthManager: _oauthManager,
+          conversationId: widget.conversation.id,
+          model: widget.conversation.model,
+        ),
+        _cachedProvider!,
+      );
+      // Don't dispose the services — background manager owns them now
+    } else {
+      _chatService?.dispose();
+      _oauthManager.dispose();
+      _serverManager.dispose();
+    }
     super.dispose();
   }
 
@@ -442,7 +496,7 @@ class _ChatScreenState extends State<ChatScreen>
           );
 
           // Listen to chat events
-          _chatService!.events.listen((event) {
+          _chatEventSubscription = _chatService!.events.listen((event) {
             handleChatEvent(event, provider);
           });
         }
@@ -493,6 +547,8 @@ class _ChatScreenState extends State<ChatScreen>
         _handleAuthError();
       } on OpenRouterPaymentRequiredException {
         // Handled by ChatEventHandlerMixin via PaymentRequired event
+      } on OpenRouterRateLimitException {
+        // Handled by ChatEventHandlerMixin via RateLimitExceeded event
       } catch (e, stackTrace) {
         print('Error in _sendMessage: $e');
         print('Stack trace: $stackTrace');
@@ -505,7 +561,7 @@ class _ChatScreenState extends State<ChatScreen>
           );
         }
       } finally {
-        if (mounted) {
+        if (!_disposed && mounted) {
           setState(() {
             _isLoading = false;
             _streamingContent = '';
@@ -516,18 +572,17 @@ class _ChatScreenState extends State<ChatScreen>
         }
       }
     } catch (e, stackTrace) {
+      if (_disposed || !mounted) return;
       print('Fatal error in _sendMessage: $e');
       print('Stack trace: $stackTrace');
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Fatal error: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 10),
-          ),
-        );
-      }
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fatal error: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 10),
+        ),
+      );
     }
   }
 
@@ -818,7 +873,7 @@ class _ChatScreenState extends State<ChatScreen>
           appOnlyTools: _serverManager.appOnlyTools,
         );
 
-        _chatService!.events.listen((event) {
+        _chatEventSubscription = _chatService!.events.listen((event) {
           handleChatEvent(event, provider);
         });
       }
@@ -855,10 +910,12 @@ class _ChatScreenState extends State<ChatScreen>
       _handleAuthError();
     } on OpenRouterPaymentRequiredException {
       // Handled by ChatEventHandlerMixin via PaymentRequired event
+    } on OpenRouterRateLimitException {
+      // Handled by ChatEventHandlerMixin via RateLimitExceeded event
     } catch (e, stackTrace) {
       print('Error in _regenerateLastResponse: $e');
       print('Stack trace: $stackTrace');
-      if (mounted) {
+      if (!_disposed && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: ${e.toString()}'),
@@ -867,7 +924,7 @@ class _ChatScreenState extends State<ChatScreen>
         );
       }
     } finally {
-      if (mounted) {
+      if (!_disposed && mounted) {
         setState(() {
           _isLoading = false;
           _streamingContent = '';
