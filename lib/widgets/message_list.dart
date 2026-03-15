@@ -126,36 +126,10 @@ class _MessageListState extends State<MessageList> {
     }
   }
 
-  void _scrollToBottom({bool animate = true}) {
-    if (!widget.scrollController.hasClients) return;
-    final target = widget.scrollController.position.maxScrollExtent;
-    if (animate) {
-      widget.scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    } else {
-      widget.scrollController.jumpTo(target);
-    }
-  }
-
   @override
   void didUpdateWidget(MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // Auto-scroll to bottom when content changes and user is at the bottom
-    final contentChanged =
-        widget.streamingContent != oldWidget.streamingContent ||
-        widget.streamingReasoning != oldWidget.streamingReasoning ||
-        widget.isLoading != oldWidget.isLoading;
-
-    if (contentChanged && _isAtBottom && !_isUserScrolling) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _scrollToBottom(animate: false);
-      });
-    }
+    // ScrollMetricsNotification handles auto-scroll for all content changes
   }
 
   /// Build full context display for mcpAppContext messages when thinking is shown.
@@ -450,6 +424,29 @@ class _MessageListState extends State<MessageList> {
               _isUserScrolling = true;
             } else if (notification is ScrollEndNotification) {
               _isUserScrolling = false;
+            }
+            return false;
+          },
+          child: NotificationListener<ScrollMetricsNotification>(
+          onNotification: (notification) {
+            // When scroll metrics change (content grew/shrank), auto-scroll
+            // to bottom if user was at the bottom and isn't actively scrolling.
+            if (_isAtBottom && !_isUserScrolling) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || !widget.scrollController.hasClients) return;
+                final max = widget.scrollController.position.maxScrollExtent;
+                if (widget.scrollController.position.pixels < max) {
+                  widget.scrollController.jumpTo(max);
+                }
+              });
+            }
+            // Update at-bottom state based on new metrics
+            final pos = notification.metrics;
+            final atBottom = pos.maxScrollExtent <= 0 ||
+                pos.pixels >= pos.maxScrollExtent - 50.0;
+            if (_isAtBottom != atBottom) {
+              _isAtBottom = atBottom;
+              widget.onAtBottomChanged(atBottom);
             }
             return false;
           },
@@ -872,6 +869,7 @@ class _MessageListState extends State<MessageList> {
                   : null,
             );
           },
+        ),
         ),
         );
       },
