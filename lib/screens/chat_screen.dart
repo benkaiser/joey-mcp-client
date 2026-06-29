@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +23,7 @@ import '../services/mcp_server_manager.dart';
 import '../services/background_chat_manager.dart';
 import '../services/mcp_app_ui_service.dart';
 import '../services/mcp_client_service.dart';
+import '../services/local_tool_service.dart';
 import '../utils/audio_attachment_handler.dart';
 import '../utils/image_attachment_handler.dart';
 import 'chat_event_handler.dart';
@@ -75,6 +78,9 @@ class _ChatScreenState extends State<ChatScreen>
   final AudioAttachmentHandler _audioHandler = AudioAttachmentHandler();
   McpOAuthManager _oauthManager = McpOAuthManager();
   McpServerManager _serverManager = McpServerManager();
+  LocalToolService _localToolService = LocalToolService(
+    enabledToolIds: LocalToolService.defaultToolIds,
+  );
 
   // Cached provider reference for use in dispose()
   ConversationProvider? _cachedProvider;
@@ -106,7 +112,11 @@ class _ChatScreenState extends State<ChatScreen>
   final Map<String, double> _webViewHeights = {};
 
   /// Host-supported display modes
-  static const List<String> _hostAvailableDisplayModes = ['inline', 'fullscreen', 'pip'];
+  static const List<String> _hostAvailableDisplayModes = [
+    'inline',
+    'fullscreen',
+    'pip',
+  ];
 
   /// Whether we're currently loading uiData blobs
   bool _loadingUiData = false;
@@ -135,7 +145,8 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   bool get authenticationRequired => _authenticationRequired;
   @override
-  set authenticationRequiredValue(bool value) => _authenticationRequired = value;
+  set authenticationRequiredValue(bool value) =>
+      _authenticationRequired = value;
   @override
   McpProgressNotificationReceived? get currentProgress => _currentProgress;
   @override
@@ -186,12 +197,15 @@ class _ChatScreenState extends State<ChatScreen>
     _focusNode.onKeyEvent = _handleKeyEvent;
 
     // Check if there's a background chat to reattach
-    final bgChat = BackgroundChatManager.instance.detach(widget.conversation.id);
+    final bgChat = BackgroundChatManager.instance.detach(
+      widget.conversation.id,
+    );
     final reattached = bgChat != null;
     if (bgChat != null) {
       _chatService = bgChat.chatService;
       _serverManager = bgChat.serverManager;
       _oauthManager = bgChat.oauthManager;
+      _localToolService = bgChat.localToolService;
       _isLoading = true;
 
       // Re-subscribe to events
@@ -278,6 +292,28 @@ class _ChatScreenState extends State<ChatScreen>
     };
     if (!reattached) {
       _serverManager.loadMcpServers(widget.conversation.id);
+      _loadLocalTools(widget.conversation.id);
+    }
+  }
+
+  Future<void> _loadLocalTools(String conversationId) async {
+    final storedToolIds = await DatabaseService.instance
+        .getConversationLocalTools(conversationId);
+    final hasLocalToolSettings = await DatabaseService.instance
+        .hasConversationLocalToolSettings(conversationId);
+    final enabledToolIds = hasLocalToolSettings
+        ? storedToolIds.toSet()
+        : LocalToolService.defaultToolIds;
+    _localToolService = LocalToolService(enabledToolIds: enabledToolIds);
+    if (_chatService != null) {
+      _chatService!.updateServers(
+        mcpClients: _serverManager.mcpClients,
+        mcpTools: _serverManager.mcpTools,
+        serverNames: _serverManager.serverNames,
+        uiService: _serverManager.uiService,
+        appOnlyTools: _serverManager.appOnlyTools,
+        localToolService: _localToolService,
+      );
     }
   }
 
@@ -367,6 +403,7 @@ class _ChatScreenState extends State<ChatScreen>
           chatService: _chatService!,
           serverManager: _serverManager,
           oauthManager: _oauthManager,
+          localToolService: _localToolService,
           conversationId: widget.conversation.id,
           model: widget.conversation.model,
         ),
@@ -387,6 +424,14 @@ class _ChatScreenState extends State<ChatScreen>
 
     // Navigate to auth screen - replace entire navigation stack
     Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+  }
+
+  bool get _shouldSuppressInputFocusWhileLoading =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  void _dismissInputFocusForLoadingStart() {
+    if (!_shouldSuppressInputFocusWhileLoading) return;
+    _focusNode.unfocus();
   }
 
   void _scrollToBottom() {
@@ -423,7 +468,11 @@ class _ChatScreenState extends State<ChatScreen>
   Future<void> _sendMessage() async {
     try {
       final text = _messageController.text.trim();
-      if (text.isEmpty && _imageHandler.pendingImages.isEmpty && _audioHandler.pendingAudios.isEmpty) return;
+      if (text.isEmpty &&
+          _imageHandler.pendingImages.isEmpty &&
+          _audioHandler.pendingAudios.isEmpty) {
+        return;
+      }
 
       final provider = context.read<ConversationProvider>();
       final openRouterService = context.read<OpenRouterService>();
@@ -482,6 +531,7 @@ class _ChatScreenState extends State<ChatScreen>
         _respondedElicitationIds
             .clear(); // Clear responded IDs for new conversation turn
       });
+      _dismissInputFocusForLoadingStart();
 
       try {
         // Initialize ChatService if not already done
@@ -493,6 +543,7 @@ class _ChatScreenState extends State<ChatScreen>
             serverNames: _serverManager.serverNames,
             uiService: _serverManager.uiService,
             appOnlyTools: _serverManager.appOnlyTools,
+            localToolService: _localToolService,
           );
 
           // Listen to chat events
@@ -673,7 +724,9 @@ class _ChatScreenState extends State<ChatScreen>
   /// Get or create a GlobalKey for the McpAppWebView associated with a message.
   GlobalKey<State<McpAppWebView>> _webViewKeyFor(String messageId) {
     return _webViewKeys.putIfAbsent(
-        messageId, () => GlobalKey<State<McpAppWebView>>());
+      messageId,
+      () => GlobalKey<State<McpAppWebView>>(),
+    );
   }
 
   /// Get or create a LayerLink for the inline anchor of a WebView.
@@ -695,13 +748,19 @@ class _ChatScreenState extends State<ChatScreen>
   /// Set [viewRequested] to true when the view itself requested the mode
   /// (via ui/request-display-mode), which bypasses the view-capabilities check
   /// since the view obviously supports any mode it requests.
-  void _setDisplayMode(String messageId, String mode, {bool viewRequested = false}) {
+  void _setDisplayMode(
+    String messageId,
+    String mode, {
+    bool viewRequested = false,
+  }) {
     // 'hidden' is always allowed (host-only feature)
     if (mode != 'inline' && mode != 'hidden' && !viewRequested) {
       final viewModes = _viewAvailableDisplayModes[messageId] ?? [];
       if (!viewModes.contains(mode)) {
         // View doesn't support this mode, fall back to inline
-        debugPrint('ChatScreen: View $messageId does not support mode "$mode" (declared: $viewModes), falling back to inline');
+        debugPrint(
+          'ChatScreen: View $messageId does not support mode "$mode" (declared: $viewModes), falling back to inline',
+        );
         mode = 'inline';
       }
     }
@@ -739,7 +798,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// Handle a message from an MCP App WebView
-  void _handleUiMessage(String message, {List<PendingImage> images = const []}) {
+  void _handleUiMessage(
+    String message, {
+    List<PendingImage> images = const [],
+  }) {
     // Add any images from the MCP App to the pending images
     for (final image in images) {
       _imageHandler.pendingImages.add(image);
@@ -761,11 +823,15 @@ class _ChatScreenState extends State<ChatScreen>
 
     // Check for existing mcpAppContext message with matching toolCallId
     final existingIndex = messages.indexWhere(
-      (m) => m.role == MessageRole.mcpAppContext && m.toolCallId == parentMessageId,
+      (m) =>
+          m.role == MessageRole.mcpAppContext &&
+          m.toolCallId == parentMessageId,
     );
 
     final contentJson = jsonEncode(content);
-    final structuredContentJson = structuredContent != null ? jsonEncode(structuredContent) : null;
+    final structuredContentJson = structuredContent != null
+        ? jsonEncode(structuredContent)
+        : null;
 
     if (existingIndex != -1) {
       // Update existing context message in place
@@ -860,6 +926,7 @@ class _ChatScreenState extends State<ChatScreen>
       _authenticationRequired = false;
       _respondedElicitationIds.clear();
     });
+    _dismissInputFocusForLoadingStart();
 
     try {
       // Initialize ChatService if needed
@@ -871,6 +938,7 @@ class _ChatScreenState extends State<ChatScreen>
           serverNames: _serverManager.serverNames,
           uiService: _serverManager.uiService,
           appOnlyTools: _serverManager.appOnlyTools,
+          localToolService: _localToolService,
         );
 
         _chatEventSubscription = _chatService!.events.listen((event) {
@@ -960,7 +1028,9 @@ class _ChatScreenState extends State<ChatScreen>
     );
 
     if (result != null &&
-        (result.text.isNotEmpty || result.images.isNotEmpty || result.audios.isNotEmpty) &&
+        (result.text.isNotEmpty ||
+            result.images.isNotEmpty ||
+            result.audios.isNotEmpty) &&
         mounted) {
       // Get all messages in the conversation
       final allMessages = provider.getMessages(widget.conversation.id);
@@ -1056,7 +1126,9 @@ class _ChatScreenState extends State<ChatScreen>
                               getPricingText(),
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurface
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
                                         .withValues(alpha: 0.6),
                                     fontSize: 11,
                                   ),
@@ -1140,15 +1212,19 @@ class _ChatScreenState extends State<ChatScreen>
               Column(
                 children: [
                   // Show OAuth banner if servers need authentication
-                  if (_oauthManager.serversNeedingOAuth.any((s) =>
-                      _oauthManager.serverOAuthStatus[s.id] != McpOAuthCardStatus.completed))
+                  if (_oauthManager.serversNeedingOAuth.any(
+                    (s) =>
+                        _oauthManager.serverOAuthStatus[s.id] !=
+                        McpOAuthCardStatus.completed,
+                  ))
                     McpOAuthBanner(
                       serversNeedingAuth: _oauthManager.serversNeedingOAuth,
                       serverOAuthStatus: _oauthManager.serverOAuthStatus,
-                      onAuthenticate: (server) => _oauthManager.startServerOAuth(
-                        server,
-                        mcpServers: _serverManager.mcpServers,
-                      ),
+                      onAuthenticate: (server) =>
+                          _oauthManager.startServerOAuth(
+                            server,
+                            mcpServers: _serverManager.mcpServers,
+                          ),
                       onSkip: (server) => _oauthManager.skipServerOAuth(server),
                       onDismiss: () {
                         _oauthManager.dismissAll();
@@ -1173,16 +1249,18 @@ class _ChatScreenState extends State<ChatScreen>
                           buildAuthRequiredCard: _buildAuthRequiredCard,
                           buildLoadingIndicator: _isLoading
                               ? () => LoadingStatusIndicator(
-                                    currentToolName: _currentToolName,
-                                    isToolExecuting: _isToolExecuting,
-                                    currentProgress: _currentProgress,
-                                  )
+                                  currentToolName: _currentToolName,
+                                  isToolExecuting: _isToolExecuting,
+                                  currentProgress: _currentProgress,
+                                )
                               : null,
                           onDeleteMessage: _deleteMessage,
                           onEditMessage: _editMessage,
                           onRegenerateLastResponse: _regenerateLastResponse,
-                          onUrlElicitationResponse: _handleUrlElicitationResponse,
-                          onFormElicitationResponse: _handleFormElicitationResponse,
+                          onUrlElicitationResponse:
+                              _handleUrlElicitationResponse,
+                          onFormElicitationResponse:
+                              _handleFormElicitationResponse,
                           webViewDisplayModes: _webViewDisplayModes,
                           viewAvailableDisplayModes: _viewAvailableDisplayModes,
                           webViewHeights: _webViewHeights,
@@ -1205,7 +1283,8 @@ class _ChatScreenState extends State<ChatScreen>
                           ),
                         ),
                         // "New content below" bubble — visible when scrolled up during streaming
-                        if (_isLoading && !_isAtBottom &&
+                        if (_isLoading &&
+                            !_isAtBottom &&
                             _scrollController.hasClients &&
                             _scrollController.position.maxScrollExtent > 0)
                           Positioned(
@@ -1224,11 +1303,15 @@ class _ChatScreenState extends State<ChatScreen>
                                       vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primaryContainer,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
                                       borderRadius: BorderRadius.circular(20),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.15),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.15,
+                                          ),
                                           blurRadius: 8,
                                           offset: const Offset(0, 2),
                                         ),
@@ -1242,14 +1325,18 @@ class _ChatScreenState extends State<ChatScreen>
                                           height: 12,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimaryContainer,
                                           ),
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
                                           'New content below',
                                           style: TextStyle(
-                                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimaryContainer,
                                             fontSize: 13,
                                             fontWeight: FontWeight.w500,
                                           ),
@@ -1258,7 +1345,9 @@ class _ChatScreenState extends State<ChatScreen>
                                         Icon(
                                           Icons.keyboard_arrow_down,
                                           size: 18,
-                                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimaryContainer,
                                         ),
                                       ],
                                     ),
@@ -1332,7 +1421,7 @@ class _ChatScreenState extends State<ChatScreen>
       Map<String, McpTool>? serverAppOnlyTools;
       final appOnlyList = _serverManager.appOnlyTools[uiData.serverId];
       if (appOnlyList != null) {
-        serverAppOnlyTools = { for (final t in appOnlyList) t.name: t };
+        serverAppOnlyTools = {for (final t in appOnlyList) t.name: t};
       }
 
       final viewModes = _viewAvailableDisplayModes[messageId] ?? [];
@@ -1380,6 +1469,7 @@ class _ChatScreenState extends State<ChatScreen>
     return CommandPalette(
       mcpServers: _serverManager.mcpServers,
       connectedServerIds: _serverManager.mcpClients.keys.toSet(),
+      localToolCount: _localToolService.enabledToolIds.length,
       onOpenPrompts: _openMcpPromptsScreen,
       onOpenServers: _showMcpServerSelector,
       onOpenDebug: _openMcpDebugScreen,
@@ -1387,22 +1477,43 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _showMcpServerSelector() async {
-    final currentServerIds = _serverManager.mcpServers.map((s) => s.id).toList();
+    final currentServerIds = _serverManager.mcpServers
+        .map((s) => s.id)
+        .toList();
+    final currentLocalToolIds = await DatabaseService.instance
+        .getConversationLocalTools(widget.conversation.id);
+    final hasLocalToolSettings = await DatabaseService.instance
+        .hasConversationLocalToolSettings(widget.conversation.id);
+    if (!mounted) return;
 
-    final selectedServerIds = await showDialog<List<String>>(
+    final result = await showDialog<McpServerSelectionResult>(
       context: context,
-      builder: (context) =>
-          McpServerSelectionDialog(initialSelectedServerIds: currentServerIds, isEditing: true),
+      builder: (context) => McpServerSelectionDialog(
+        initialSelectedServerIds: currentServerIds,
+        initialSelectedLocalToolIds: hasLocalToolSettings
+            ? currentLocalToolIds
+            : LocalToolService.defaultToolIds.toList(),
+        isEditing: true,
+      ),
     );
 
     // User cancelled
-    if (selectedServerIds == null) return;
+    if (result == null) return;
+    final selectedServerIds = result.serverIds;
 
     // Determine which servers were added and removed
     final currentIds = currentServerIds.toSet();
     final newIds = selectedServerIds.toSet();
 
-    if (currentIds.length == newIds.length && currentIds.containsAll(newIds)) {
+    final currentLocalIds = hasLocalToolSettings
+        ? currentLocalToolIds.toSet()
+        : LocalToolService.defaultToolIds;
+    final newLocalIds = result.localToolIds.toSet();
+
+    if (currentIds.length == newIds.length &&
+        currentIds.containsAll(newIds) &&
+        currentLocalIds.length == newLocalIds.length &&
+        currentLocalIds.containsAll(newLocalIds)) {
       return; // No change
     }
 
@@ -1419,6 +1530,13 @@ class _ChatScreenState extends State<ChatScreen>
     await DatabaseService.instance.setConversationMcpServers(
       widget.conversation.id,
       selectedServerIds,
+    );
+    await DatabaseService.instance.setConversationLocalTools(
+      widget.conversation.id,
+      result.localToolIds,
+    );
+    _localToolService = LocalToolService(
+      enabledToolIds: result.localToolIds.toSet(),
     );
 
     // Reload servers from DB and initialize new ones
@@ -1443,13 +1561,16 @@ class _ChatScreenState extends State<ChatScreen>
         serverNames: _serverManager.serverNames,
         uiService: _serverManager.uiService,
         appOnlyTools: _serverManager.appOnlyTools,
+        localToolService: _localToolService,
       );
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('MCP servers updated (${_serverManager.mcpServers.length} active)'),
+          content: Text(
+            'MCP servers updated (${_serverManager.mcpServers.length} active)',
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -1460,8 +1581,10 @@ class _ChatScreenState extends State<ChatScreen>
     final result = await Navigator.push<PromptSelectionResult>(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            McpPromptsScreen(servers: _serverManager.mcpServers, clients: _serverManager.mcpClients),
+        builder: (context) => McpPromptsScreen(
+          servers: _serverManager.mcpServers,
+          clients: _serverManager.mcpClients,
+        ),
       ),
     );
 
@@ -1489,6 +1612,7 @@ class _ChatScreenState extends State<ChatScreen>
         builder: (context) => McpDebugScreen(
           serverManager: _serverManager,
           oauthManager: _oauthManager,
+          localToolService: _localToolService,
           conversationId: widget.conversation.id,
         ),
       ),
@@ -1499,15 +1623,17 @@ class _ChatScreenState extends State<ChatScreen>
     final modelSupportsImages =
         _modelDetails != null &&
         _modelDetails!['architecture'] != null &&
-        (_modelDetails!['architecture']['input_modalities'] as List?)
-                ?.contains('image') ==
+        (_modelDetails!['architecture']['input_modalities'] as List?)?.contains(
+              'image',
+            ) ==
             true;
 
     final modelSupportsAudio =
         _modelDetails != null &&
         _modelDetails!['architecture'] != null &&
-        (_modelDetails!['architecture']['input_modalities'] as List?)
-                ?.contains('audio') ==
+        (_modelDetails!['architecture']['input_modalities'] as List?)?.contains(
+              'audio',
+            ) ==
             true;
 
     return MessageInput(
@@ -1578,9 +1704,16 @@ class _WebViewHost extends StatefulWidget {
   final String toolName;
   final GlobalKey webViewKey;
   final void Function(String message, {List<PendingImage> images})? onUiMessage;
-  final void Function(String messageId, List<dynamic> content, Map<String, dynamic>? structuredContent)? onUpdateModelContext;
-  final void Function(String messageId, String requestedMode)? onRequestDisplayMode;
-  final void Function(String messageId, List<String> modes)? onViewCapabilitiesReceived;
+  final void Function(
+    String messageId,
+    List<dynamic> content,
+    Map<String, dynamic>? structuredContent,
+  )?
+  onUpdateModelContext;
+  final void Function(String messageId, String requestedMode)?
+  onRequestDisplayMode;
+  final void Function(String messageId, List<String> modes)?
+  onViewCapabilitiesReceived;
   final void Function(String messageId, double height)? onHeightChanged;
   final void Function(String messageId, String mode) onSetDisplayMode;
 
@@ -1614,12 +1747,16 @@ class _WebViewHostState extends State<_WebViewHost> {
   @override
   void initState() {
     super.initState();
-    debugPrint('_WebViewHost [${widget.messageId}]: initState (hashCode=$hashCode)');
+    debugPrint(
+      '_WebViewHost [${widget.messageId}]: initState (hashCode=$hashCode)',
+    );
   }
 
   @override
   void dispose() {
-    debugPrint('_WebViewHost [${widget.messageId}]: dispose (hashCode=$hashCode)');
+    debugPrint(
+      '_WebViewHost [${widget.messageId}]: dispose (hashCode=$hashCode)',
+    );
     super.dispose();
   }
 
@@ -1627,7 +1764,9 @@ class _WebViewHostState extends State<_WebViewHost> {
   void didUpdateWidget(covariant _WebViewHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.displayMode != widget.displayMode) {
-      debugPrint('_WebViewHost [${widget.messageId}]: displayMode changed ${oldWidget.displayMode} → ${widget.displayMode} (hashCode=$hashCode)');
+      debugPrint(
+        '_WebViewHost [${widget.messageId}]: displayMode changed ${oldWidget.displayMode} → ${widget.displayMode} (hashCode=$hashCode)',
+      );
     }
   }
 
@@ -1647,8 +1786,14 @@ class _WebViewHostState extends State<_WebViewHost> {
     final maxRight = parentSize.width - _pipWidth - _pipEdgePadding;
     final maxBottom = parentSize.height - totalHeight - _pipTopPadding;
     _pipOffset = Offset(
-      _pipOffset.dx.clamp(_pipEdgePadding, maxRight.clamp(_pipEdgePadding, double.infinity)),
-      _pipOffset.dy.clamp(_pipEdgePadding, maxBottom.clamp(_pipEdgePadding, double.infinity)),
+      _pipOffset.dx.clamp(
+        _pipEdgePadding,
+        maxRight.clamp(_pipEdgePadding, double.infinity),
+      ),
+      _pipOffset.dy.clamp(
+        _pipEdgePadding,
+        maxBottom.clamp(_pipEdgePadding, double.infinity),
+      ),
     );
   }
 
@@ -1673,7 +1818,9 @@ class _WebViewHostState extends State<_WebViewHost> {
     final bool isFullscreen = widget.displayMode == 'fullscreen';
     final bool isPip = widget.displayMode == 'pip';
     final supportsPip = widget.viewAvailableDisplayModes.contains('pip');
-    final supportsFullscreen = widget.viewAvailableDisplayModes.contains('fullscreen');
+    final supportsFullscreen = widget.viewAvailableDisplayModes.contains(
+      'fullscreen',
+    );
 
     // Simple approach: let the WebView resize naturally per mode.
     // The McpAppWebView caches its InAppWebView instance in initState
@@ -1733,13 +1880,18 @@ class _WebViewHostState extends State<_WebViewHost> {
     // so the WebView + border + scrollbar fit exactly within the message
     // content area.
     final screenHeight = MediaQuery.of(context).size.height;
-    final clampedInlineHeight = widget.inlineHeight.clamp(50.0, screenHeight * 0.4);
+    final clampedInlineHeight = widget.inlineHeight.clamp(
+      50.0,
+      screenHeight * 0.4,
+    );
 
     // Determine which mode buttons to show
-    final showFullscreen = widget.viewAvailableDisplayModes.contains('fullscreen')
-        && widget.hostAvailableDisplayModes.contains('fullscreen');
-    final showPip = widget.viewAvailableDisplayModes.contains('pip')
-        && widget.hostAvailableDisplayModes.contains('pip');
+    final showFullscreen =
+        widget.viewAvailableDisplayModes.contains('fullscreen') &&
+        widget.hostAvailableDisplayModes.contains('fullscreen');
+    final showPip =
+        widget.viewAvailableDisplayModes.contains('pip') &&
+        widget.hostAvailableDisplayModes.contains('pip');
 
     return Positioned(
       left: 0,
@@ -1755,7 +1907,9 @@ class _WebViewHostState extends State<_WebViewHost> {
           margin: const EdgeInsets.only(left: 16.0, top: 4.0, bottom: 4.0),
           decoration: BoxDecoration(
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.3),
             ),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -1777,8 +1931,12 @@ class _WebViewHostState extends State<_WebViewHost> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Theme.of(context).colorScheme.surface.withValues(alpha: 0.0),
-                          Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+                          Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.0),
+                          Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.9),
                         ],
                       ),
                     ),
@@ -1791,18 +1949,27 @@ class _WebViewHostState extends State<_WebViewHost> {
                           _InlineToolbarButton(
                             icon: Icons.fullscreen,
                             tooltip: 'Fullscreen',
-                            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'fullscreen'),
+                            onPressed: () => widget.onSetDisplayMode(
+                              widget.messageId,
+                              'fullscreen',
+                            ),
                           ),
                         if (showPip)
                           _InlineToolbarButton(
                             icon: Icons.picture_in_picture_alt,
                             tooltip: 'Picture-in-picture',
-                            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'pip'),
+                            onPressed: () => widget.onSetDisplayMode(
+                              widget.messageId,
+                              'pip',
+                            ),
                           ),
                         _InlineToolbarButton(
                           icon: Icons.visibility_off_outlined,
                           tooltip: 'Hide',
-                          onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+                          onPressed: () => widget.onSetDisplayMode(
+                            widget.messageId,
+                            'hidden',
+                          ),
                         ),
                       ],
                     ),
@@ -1833,7 +2000,8 @@ class _WebViewHostState extends State<_WebViewHost> {
           IconButton(
             icon: const Icon(Icons.fullscreen_exit),
             tooltip: 'Return inline',
-            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'inline'),
+            onPressed: () =>
+                widget.onSetDisplayMode(widget.messageId, 'inline'),
           ),
           const Spacer(),
           if (supportsPip)
@@ -1845,7 +2013,8 @@ class _WebViewHostState extends State<_WebViewHost> {
           IconButton(
             icon: const Icon(Icons.visibility_off_outlined),
             tooltip: 'Hide',
-            onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+            onPressed: () =>
+                widget.onSetDisplayMode(widget.messageId, 'hidden'),
           ),
         ],
       ),
@@ -1871,8 +2040,11 @@ class _WebViewHostState extends State<_WebViewHost> {
         child: Row(
           children: [
             const SizedBox(width: 8),
-            Icon(Icons.drag_indicator, size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.drag_indicator,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
@@ -1887,27 +2059,38 @@ class _WebViewHostState extends State<_WebViewHost> {
               _PipHeaderButton(
                 icon: Icons.fullscreen,
                 tooltip: 'Fullscreen',
-                onPressed: () => widget.onSetDisplayMode(widget.messageId, 'fullscreen'),
+                onPressed: () =>
+                    widget.onSetDisplayMode(widget.messageId, 'fullscreen'),
               ),
             _PipHeaderButton(
               icon: Icons.fullscreen_exit,
               tooltip: 'Return inline',
-              onPressed: () => widget.onSetDisplayMode(widget.messageId, 'inline'),
+              onPressed: () =>
+                  widget.onSetDisplayMode(widget.messageId, 'inline'),
             ),
             _PipHeaderButton(
               icon: Icons.visibility_off_outlined,
               tooltip: 'Hide',
-              onPressed: () => widget.onSetDisplayMode(widget.messageId, 'hidden'),
+              onPressed: () =>
+                  widget.onSetDisplayMode(widget.messageId, 'hidden'),
             ),
           ],
         ),
       ),
     );
   }
+
   /// Build resize handles for PIP mode (corner + edge handles).
-  List<Widget> _buildPipResizeHandles(Size screenSize, double maxW, double maxH) {
-    Widget corner(Alignment alignment, SystemMouseCursor cursor,
-        void Function(DragUpdateDetails) onPan) {
+  List<Widget> _buildPipResizeHandles(
+    Size screenSize,
+    double maxW,
+    double maxH,
+  ) {
+    Widget corner(
+      Alignment alignment,
+      SystemMouseCursor cursor,
+      void Function(DragUpdateDetails) onPan,
+    ) {
       return Positioned(
         left: alignment.x < 0 ? 0 : null,
         right: alignment.x > 0 ? 0 : null,
@@ -1916,23 +2099,37 @@ class _WebViewHostState extends State<_WebViewHost> {
         width: _pipResizeHandleSize,
         height: _pipResizeHandleSize,
         child: GestureDetector(
-          onPanUpdate: (d) => setState(() { onPan(d); _clampPipOffset(screenSize); }),
+          onPanUpdate: (d) => setState(() {
+            onPan(d);
+            _clampPipOffset(screenSize);
+          }),
           child: MouseRegion(cursor: cursor, child: const SizedBox.expand()),
         ),
       );
     }
 
     Widget edge({
-      double? left, double? right, double? top, double? bottom,
-      double? width, double? height,
+      double? left,
+      double? right,
+      double? top,
+      double? bottom,
+      double? width,
+      double? height,
       required SystemMouseCursor cursor,
       required void Function(DragUpdateDetails) onPan,
     }) {
       return Positioned(
-        left: left, right: right, top: top, bottom: bottom,
-        width: width, height: height,
+        left: left,
+        right: right,
+        top: top,
+        bottom: bottom,
+        width: width,
+        height: height,
         child: GestureDetector(
-          onPanUpdate: (d) => setState(() { onPan(d); _clampPipOffset(screenSize); }),
+          onPanUpdate: (d) => setState(() {
+            onPan(d);
+            _clampPipOffset(screenSize);
+          }),
           child: MouseRegion(cursor: cursor, child: const SizedBox.expand()),
         ),
       );
@@ -1965,26 +2162,50 @@ class _WebViewHostState extends State<_WebViewHost> {
         _pipHeight = nh;
       }),
       // Edges
-      edge(left: 0, top: _pipResizeHandleSize, width: _pipResizeHandleSize / 2,
-          bottom: _pipResizeHandleSize, cursor: SystemMouseCursors.resizeLeft,
-          onPan: (d) { _pipWidth = (_pipWidth - d.delta.dx).clamp(_pipMinWidth, maxW); }),
-      edge(top: 0, left: _pipResizeHandleSize, right: _pipResizeHandleSize,
-          height: _pipResizeHandleSize / 2, cursor: SystemMouseCursors.resizeUp,
-          onPan: (d) { _pipHeight = (_pipHeight - d.delta.dy).clamp(_pipMinHeight, maxH); }),
-      edge(right: 0, top: _pipResizeHandleSize, width: _pipResizeHandleSize / 2,
-          bottom: _pipResizeHandleSize, cursor: SystemMouseCursors.resizeRight,
-          onPan: (d) {
-            final nw = (_pipWidth + d.delta.dx).clamp(_pipMinWidth, maxW);
-            _pipOffset = Offset(_pipOffset.dx - (nw - _pipWidth), _pipOffset.dy);
-            _pipWidth = nw;
-          }),
-      edge(bottom: 0, left: _pipResizeHandleSize, right: _pipResizeHandleSize,
-          height: _pipResizeHandleSize / 2, cursor: SystemMouseCursors.resizeDown,
-          onPan: (d) {
-            final nh = (_pipHeight + d.delta.dy).clamp(_pipMinHeight, maxH);
-            _pipOffset = Offset(_pipOffset.dx, _pipOffset.dy - (nh - _pipHeight));
-            _pipHeight = nh;
-          }),
+      edge(
+        left: 0,
+        top: _pipResizeHandleSize,
+        width: _pipResizeHandleSize / 2,
+        bottom: _pipResizeHandleSize,
+        cursor: SystemMouseCursors.resizeLeft,
+        onPan: (d) {
+          _pipWidth = (_pipWidth - d.delta.dx).clamp(_pipMinWidth, maxW);
+        },
+      ),
+      edge(
+        top: 0,
+        left: _pipResizeHandleSize,
+        right: _pipResizeHandleSize,
+        height: _pipResizeHandleSize / 2,
+        cursor: SystemMouseCursors.resizeUp,
+        onPan: (d) {
+          _pipHeight = (_pipHeight - d.delta.dy).clamp(_pipMinHeight, maxH);
+        },
+      ),
+      edge(
+        right: 0,
+        top: _pipResizeHandleSize,
+        width: _pipResizeHandleSize / 2,
+        bottom: _pipResizeHandleSize,
+        cursor: SystemMouseCursors.resizeRight,
+        onPan: (d) {
+          final nw = (_pipWidth + d.delta.dx).clamp(_pipMinWidth, maxW);
+          _pipOffset = Offset(_pipOffset.dx - (nw - _pipWidth), _pipOffset.dy);
+          _pipWidth = nw;
+        },
+      ),
+      edge(
+        bottom: 0,
+        left: _pipResizeHandleSize,
+        right: _pipResizeHandleSize,
+        height: _pipResizeHandleSize / 2,
+        cursor: SystemMouseCursors.resizeDown,
+        onPan: (d) {
+          final nh = (_pipHeight + d.delta.dy).clamp(_pipMinHeight, maxH);
+          _pipOffset = Offset(_pipOffset.dx, _pipOffset.dy - (nh - _pipHeight));
+          _pipHeight = nh;
+        },
+      ),
     ];
   }
 }
@@ -2043,7 +2264,10 @@ class _InlineToolbarButton extends StatelessWidget {
           onTap: onPressed,
           borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10.0,
+              vertical: 6.0,
+            ),
             child: Icon(
               icon,
               size: 18,

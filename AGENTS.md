@@ -7,7 +7,7 @@
 
 ### Tech Stack
 - **Flutter** (iOS, Android, macOS, Windows, Linux) — Dart SDK ^3.10.7
-- **State**: Provider — **DB**: sqflite (schema v15) — **HTTP**: Dio
+- **State**: Provider — **DB**: sqflite (schema v17) — **HTTP**: Dio
 - **LLM**: OpenRouter (PKCE OAuth, SSE streaming) — **MCP**: `mcp_dart` (Streamable HTTP)
 
 ## Architecture

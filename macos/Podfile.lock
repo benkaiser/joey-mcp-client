@@ -11,12 +11,19 @@ PODS:
     - FlutterMacOS
   - file_selector_macos (0.0.1):
     - FlutterMacOS
+  - flutter_contacts (0.0.1):
+    - FlutterMacOS
   - flutter_inappwebview_macos (0.0.1):
     - FlutterMacOS
     - OrderedSet (~> 6.0.3)
+  - flutter_timezone (0.1.0):
+    - FlutterMacOS
   - flutter_web_auth_2 (5.0.0):
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
+  - geolocator_apple (1.2.0):
+    - Flutter
+    - FlutterMacOS
   - just_audio (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -57,9 +64,12 @@ DEPENDENCIES:
   - dynamic_color (from `Flutter/ephemeral/.symlinks/plugins/dynamic_color/macos`)
   - file_picker (from `Flutter/ephemeral/.symlinks/plugins/file_picker/macos`)
   - file_selector_macos (from `Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos`)
+  - flutter_contacts (from `Flutter/ephemeral/.symlinks/plugins/flutter_contacts/macos`)
   - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
+  - flutter_timezone (from `Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos`)
   - flutter_web_auth_2 (from `Flutter/ephemeral/.symlinks/plugins/flutter_web_auth_2/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
+  - geolocator_apple (from `Flutter/ephemeral/.symlinks/plugins/geolocator_apple/darwin`)
   - just_audio (from `Flutter/ephemeral/.symlinks/plugins/just_audio/darwin`)
   - macos_ui (from `Flutter/ephemeral/.symlinks/plugins/macos_ui/macos`)
   - macos_window_utils (from `Flutter/ephemeral/.symlinks/plugins/macos_window_utils/macos`)
@@ -92,12 +102,18 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/file_picker/macos
   file_selector_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos
+  flutter_contacts:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_contacts/macos
   flutter_inappwebview_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos
+  flutter_timezone:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos
   flutter_web_auth_2:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_web_auth_2/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
+  geolocator_apple:
+    :path: Flutter/ephemeral/.symlinks/plugins/geolocator_apple/darwin
   just_audio:
     :path: Flutter/ephemeral/.symlinks/plugins/just_audio/darwin
   macos_ui:
@@ -134,9 +150,12 @@ SPEC CHECKSUMS:
   dynamic_color: cb7c2a300ee67ed3bd96c3e852df3af0300bf610
   file_picker: 7584aae6fa07a041af2b36a2655122d42f578c1a
   file_selector_macos: 9e9e068e90ebee155097d00e89ae91edb2374db7
+  flutter_contacts: 6f45cdf49f4fb2241793263546f823f7e812668e
   flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d
+  flutter_timezone: d272288c69082ad571630e0d17140b3d6b93dc0c
   flutter_web_auth_2: 7fe624ff12ddcb4c19e5dbcd56c9e9ea4899d967
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   macos_ui: ff29104a215c2e1b76f37aacdcbba648abb25faa
   macos_window_utils: 23f54331a0fd51eea9e0ed347253bf48fd379d1d

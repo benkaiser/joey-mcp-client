@@ -91,264 +91,276 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _startSearch,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+            _startSearch,
         const SingleActivator(LogicalKeyboardKey.escape): _stopSearch,
       },
       child: Focus(
         focusNode: _pageFocusNode,
         autofocus: true,
         child: Scaffold(
-      appBar: AppBar(
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                decoration: const InputDecoration(
-                  hintText: 'Search conversations...',
-                  border: InputBorder.none,
-                ),
-                onChanged: _onSearchChanged,
-              )
-            : const Text('Joey MCP Client'),
-        actions: [
-          if (_isSearching)
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Close search',
-              onPressed: _stopSearch,
-            )
-          else ...[
-            IconButton(
-              icon: const Icon(Icons.search),
-              tooltip: 'Search conversations',
-              onPressed: _startSearch,
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Settings',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ],
-      ),
-      body: Consumer<ConversationProvider>(
-        builder: (context, provider, child) {
-          final conversations = _searchResults ?? provider.conversations;
-
-          if (provider.conversations.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.chat_bubble_outline,
-                    size: 64,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No conversations yet',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Start a new chat to get started',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+          appBar: AppBar(
+            title: _isSearching
+                ? TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    decoration: const InputDecoration(
+                      hintText: 'Search conversations...',
+                      border: InputBorder.none,
                     ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (_isSearching && _searchResults != null && conversations.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.search_off,
-                    size: 64,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No results found',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Try a different search term',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            itemCount: conversations.length,
-            itemBuilder: (context, index) {
-              final conversation = conversations[index];
-              return Dismissible(
-                key: Key(conversation.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
+                    onChanged: _onSearchChanged,
+                  )
+                : const Text('Joey MCP Client'),
+            actions: [
+              if (_isSearching)
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close search',
+                  onPressed: _stopSearch,
+                )
+              else ...[
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Search conversations',
+                  onPressed: _startSearch,
                 ),
-                onDismissed: (direction) {
-                  provider.deleteConversation(conversation.id);
-                },
-                child: _ConversationListItem(
-                  conversation: conversation,
-                  searchQuery: _isSearching
-                      ? _searchController.text.trim()
-                      : null,
-                  onTap: () {
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  tooltip: 'Settings',
+                  onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            ChatScreen(conversation: conversation),
+                        builder: (context) => const SettingsScreen(),
                       ),
                     );
                   },
-                  onLongPress: () async {
-                    final result = await showModalActionSheet<String>(
-                      context: context,
-                      actions: [
-                        const SheetAction(
-                          key: 'delete',
-                          label: 'Delete',
-                          isDestructiveAction: true,
-                        ),
-                      ],
-                    );
-                    if (result == 'delete') {
-                      provider.deleteConversation(conversation.id);
-                    }
-                  },
                 ),
+              ],
+            ],
+          ),
+          body: Consumer<ConversationProvider>(
+            builder: (context, provider, child) {
+              final conversations = _searchResults ?? provider.conversations;
+
+              if (provider.conversations.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 64,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No conversations yet',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Start a new chat to get started',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (_isSearching &&
+                  _searchResults != null &&
+                  conversations.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.search_off,
+                        size: 64,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No results found',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Try a different search term',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: conversations.length,
+                itemBuilder: (context, index) {
+                  final conversation = conversations[index];
+                  return Dismissible(
+                    key: Key(conversation.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      color: Colors.red,
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (direction) {
+                      provider.deleteConversation(conversation.id);
+                    },
+                    child: _ConversationListItem(
+                      conversation: conversation,
+                      searchQuery: _isSearching
+                          ? _searchController.text.trim()
+                          : null,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                ChatScreen(conversation: conversation),
+                          ),
+                        );
+                      },
+                      onLongPress: () async {
+                        final result = await showModalActionSheet<String>(
+                          context: context,
+                          actions: [
+                            const SheetAction(
+                              key: 'delete',
+                              label: 'Delete',
+                              isDestructiveAction: true,
+                            ),
+                          ],
+                        );
+                        if (result == 'delete') {
+                          provider.deleteConversation(conversation.id);
+                        }
+                      },
+                    ),
+                  );
+                },
               );
             },
-          );
-        },
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () async {
+              // Check for default model
+              final defaultModel = await DefaultModelService.getDefaultModel();
+
+              String? selectedModel;
+
+              if (defaultModel != null) {
+                // Default model exists — show combined dialog with model override option
+                if (!context.mounted) return;
+
+                final result = await showDialog<dynamic>(
+                  context: context,
+                  builder: (context) =>
+                      McpServerSelectionDialog(selectedModel: defaultModel),
+                );
+
+                // User cancelled
+                if (result == null || !context.mounted) return;
+
+                List<String> selectedServerIds;
+                List<String> selectedLocalToolIds;
+                if (result is McpServerSelectionResult) {
+                  selectedModel = result.model ?? defaultModel;
+                  selectedServerIds = result.serverIds;
+                  selectedLocalToolIds = result.localToolIds;
+                } else {
+                  return;
+                }
+
+                final provider = context.read<ConversationProvider>();
+                final conversation = await provider.createConversation(
+                  model: selectedModel,
+                );
+
+                if (selectedServerIds.isNotEmpty) {
+                  await DatabaseService.instance.setConversationMcpServers(
+                    conversation.id,
+                    selectedServerIds,
+                  );
+                }
+                await DatabaseService.instance.setConversationLocalTools(
+                  conversation.id,
+                  selectedLocalToolIds,
+                );
+
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ChatScreen(conversation: conversation),
+                    ),
+                  );
+                }
+              } else {
+                // No default model — show model picker first
+                if (!context.mounted) return;
+                selectedModel = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ModelPickerScreen(),
+                  ),
+                );
+
+                if (selectedModel == null || !context.mounted) return;
+
+                // Show MCP server selection dialog (without model section)
+                final result = await showDialog<McpServerSelectionResult>(
+                  context: context,
+                  builder: (context) => const McpServerSelectionDialog(),
+                );
+
+                // User cancelled
+                if (result == null || !context.mounted) return;
+
+                final provider = context.read<ConversationProvider>();
+                final conversation = await provider.createConversation(
+                  model: selectedModel,
+                );
+
+                if (result.serverIds.isNotEmpty) {
+                  await DatabaseService.instance.setConversationMcpServers(
+                    conversation.id,
+                    result.serverIds,
+                  );
+                }
+                await DatabaseService.instance.setConversationLocalTools(
+                  conversation.id,
+                  result.localToolIds,
+                );
+
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ChatScreen(conversation: conversation),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Icon(Icons.add),
+          ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // Check for default model
-          final defaultModel = await DefaultModelService.getDefaultModel();
-
-          String? selectedModel;
-
-          if (defaultModel != null) {
-            // Default model exists — show combined dialog with model override option
-            if (!context.mounted) return;
-
-            final result = await showDialog<dynamic>(
-              context: context,
-              builder: (context) =>
-                  McpServerSelectionDialog(selectedModel: defaultModel),
-            );
-
-            // User cancelled
-            if (result == null || !context.mounted) return;
-
-            List<String> selectedServerIds;
-            if (result is McpServerSelectionResult) {
-              selectedModel = result.model;
-              selectedServerIds = result.serverIds;
-            } else if (result is List<String>) {
-              selectedModel = defaultModel;
-              selectedServerIds = result;
-            } else {
-              return;
-            }
-
-            final provider = context.read<ConversationProvider>();
-            final conversation = await provider.createConversation(
-              model: selectedModel,
-            );
-
-            if (selectedServerIds.isNotEmpty) {
-              await DatabaseService.instance.setConversationMcpServers(
-                conversation.id,
-                selectedServerIds,
-              );
-            }
-
-            if (context.mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(conversation: conversation),
-                ),
-              );
-            }
-          } else {
-            // No default model — show model picker first
-            if (!context.mounted) return;
-            selectedModel = await Navigator.push<String>(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ModelPickerScreen(),
-              ),
-            );
-
-            if (selectedModel == null || !context.mounted) return;
-
-            // Show MCP server selection dialog (without model section)
-            final selectedServerIds = await showDialog<List<String>>(
-              context: context,
-              builder: (context) => const McpServerSelectionDialog(),
-            );
-
-            // User cancelled
-            if (selectedServerIds == null || !context.mounted) return;
-
-            final provider = context.read<ConversationProvider>();
-            final conversation = await provider.createConversation(
-              model: selectedModel,
-            );
-
-            if (selectedServerIds.isNotEmpty) {
-              await DatabaseService.instance.setConversationMcpServers(
-                conversation.id,
-                selectedServerIds,
-              );
-            }
-
-            if (context.mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(conversation: conversation),
-                ),
-              );
-            }
-          }
-        },
-        child: const Icon(Icons.add),
-      ),
-    ),
-    ),
     );
   }
 }

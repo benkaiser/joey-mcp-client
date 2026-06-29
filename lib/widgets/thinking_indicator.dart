@@ -16,8 +16,8 @@ class ThinkingIndicator extends StatelessWidget {
     if (indicators.isEmpty) return const SizedBox.shrink();
 
     // Show usage button inline for assistant messages with tool calls
-    final showUsage = message.role == MessageRole.assistant &&
-        message.usageData != null;
+    final showUsage =
+        message.role == MessageRole.assistant && message.usageData != null;
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, bottom: 8),
@@ -62,15 +62,25 @@ class ThinkingIndicator extends StatelessWidget {
     // Tool result message
     if (message.role == MessageRole.tool) {
       final toolName = message.toolName ?? 'tool';
+      final isLocalTool = toolName.startsWith('local_');
       final isError =
           message.content.startsWith('Failed to parse tool arguments') ||
           message.content.startsWith('Error executing tool') ||
+          message.content.startsWith('Error executing local tool') ||
           message.content.startsWith('Tool not found') ||
           message.content.startsWith('MCP error');
       indicators.add(
         _IndicatorData(
-          icon: isError ? Icons.error_outline : Icons.check_circle_outline,
-          text: isError ? 'Error from $toolName' : 'Result from $toolName',
+          icon: isError
+              ? Icons.error_outline
+              : isLocalTool
+              ? Icons.phone_iphone
+              : Icons.check_circle_outline,
+          text: isError
+              ? 'Error from $toolName'
+              : isLocalTool
+              ? 'Local result from $toolName'
+              : 'Result from $toolName',
         ),
       );
       return indicators;
@@ -125,7 +135,9 @@ class ThinkingIndicator extends StatelessWidget {
               .map((tc) => tc['function']['name'] as String)
               .toList();
           final text = toolNames.length == 1
-              ? 'Calling ${toolNames.first}'
+              ? (toolNames.first.startsWith('local_')
+                    ? 'Calling local tool ${toolNames.first}'
+                    : 'Calling ${toolNames.first}')
               : 'Calling ${toolNames.length} tools';
           indicators.add(
             _IndicatorData(icon: Icons.build_outlined, text: text),

@@ -1,0 +1,4 @@
+• Local device tools — Enable on-device tools per chat for time, location, contacts, messages, calls, email, calendar, reminders, device info, URLs, and alarms
+• Safer actions — SMS, calls, email, URLs, and alarms now show clear confirmation cards
+• Better setup — Local tools are separate from remote MCP servers and show permission status
+• Bug fixes — Improved URI encoding, iOS keyboard behavior, and native permissions

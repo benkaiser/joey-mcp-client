@@ -5,6 +5,7 @@ import '../providers/conversation_provider.dart';
 import 'chat_service.dart';
 import 'mcp_oauth_manager.dart';
 import 'mcp_server_manager.dart';
+import 'local_tool_service.dart';
 
 /// Holds the services for a conversation whose agentic loop is still running
 /// after the user navigated away from the chat screen.
@@ -12,6 +13,7 @@ class ActiveChat {
   final ChatService chatService;
   final McpServerManager serverManager;
   final McpOAuthManager oauthManager;
+  final LocalToolService localToolService;
   final String conversationId;
   final String model;
 
@@ -19,6 +21,7 @@ class ActiveChat {
     required this.chatService,
     required this.serverManager,
     required this.oauthManager,
+    required this.localToolService,
     required this.conversationId,
     required this.model,
   });

@@ -1,6 +1,8 @@
 PODS:
   - audio_session (0.0.1):
     - Flutter
+  - device_calendar (0.0.1):
+    - Flutter
   - DKImagePickerController/Core (4.3.9):
     - DKImagePickerController/ImageDataManager
     - DKImagePickerController/Resource
@@ -36,6 +38,8 @@ PODS:
     - DKImagePickerController/PhotoGallery
     - Flutter
   - Flutter (1.0.0)
+  - flutter_contacts (0.0.1):
+    - Flutter
   - flutter_custom_tabs_ios (2.5.0):
     - Flutter
   - flutter_inappwebview_ios (0.0.1):
@@ -45,8 +49,13 @@ PODS:
   - flutter_inappwebview_ios/Core (0.0.1):
     - Flutter
     - OrderedSet (~> 6.0.3)
+  - flutter_timezone (0.0.1):
+    - Flutter
   - flutter_web_auth_2 (5.0.0):
     - Flutter
+  - geolocator_apple (1.2.0):
+    - Flutter
+    - FlutterMacOS
   - image_picker_ios (0.0.1):
     - Flutter
   - integration_test (0.0.1):
@@ -80,11 +89,15 @@ PODS:
 
 DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
+  - device_calendar (from `.symlinks/plugins/device_calendar/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
+  - flutter_contacts (from `.symlinks/plugins/flutter_contacts/ios`)
   - flutter_custom_tabs_ios (from `.symlinks/plugins/flutter_custom_tabs_ios/ios`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
+  - flutter_timezone (from `.symlinks/plugins/flutter_timezone/ios`)
   - flutter_web_auth_2 (from `.symlinks/plugins/flutter_web_auth_2/ios`)
+  - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - just_audio (from `.symlinks/plugins/just_audio/darwin`)
@@ -108,16 +121,24 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   audio_session:
     :path: ".symlinks/plugins/audio_session/ios"
+  device_calendar:
+    :path: ".symlinks/plugins/device_calendar/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
     :path: Flutter
+  flutter_contacts:
+    :path: ".symlinks/plugins/flutter_contacts/ios"
   flutter_custom_tabs_ios:
     :path: ".symlinks/plugins/flutter_custom_tabs_ios/ios"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
+  flutter_timezone:
+    :path: ".symlinks/plugins/flutter_timezone/ios"
   flutter_web_auth_2:
     :path: ".symlinks/plugins/flutter_web_auth_2/ios"
+  geolocator_apple:
+    :path: ".symlinks/plugins/geolocator_apple/darwin"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
   integration_test:
@@ -143,13 +164,17 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
+  device_calendar: b55b2c5406cfba45c95a59f9059156daee1f74ed
   DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_contacts: 2ec1d6b62ca2869c3bbb3871bd74d4e3ef157135
   flutter_custom_tabs_ios: 69d941c779f706a754aca7c62e59a8f34d6951de
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
+  flutter_timezone: 7c838e17ffd4645d261e87037e5bebf6d38fe544
   flutter_web_auth_2: 646fc9df97a01c59e5eea99b237da2c6360f8439
+  geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed

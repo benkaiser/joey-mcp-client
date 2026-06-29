@@ -33,9 +33,9 @@ mixin ConversationActionsMixin on State<ChatScreen> {
 
     if (messages.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No messages to share')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No messages to share')));
       }
       return;
     }
@@ -48,8 +48,8 @@ mixin ConversationActionsMixin on State<ChatScreen> {
 
     // On desktop, copy to clipboard since the share sheet lacks a copy option.
     // On mobile, use the native share sheet.
-    final isDesktop = !kIsWeb &&
-        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    final isDesktop =
+        !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
     if (isDesktop) {
       await Clipboard.setData(ClipboardData(text: markdown));
       if (mounted) {
@@ -71,9 +71,9 @@ mixin ConversationActionsMixin on State<ChatScreen> {
 
     if (messages.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No messages to export')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No messages to export')));
       }
       return;
     }
@@ -87,8 +87,8 @@ mixin ConversationActionsMixin on State<ChatScreen> {
       messages,
     );
 
-    final isDesktop = !kIsWeb &&
-        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    final isDesktop =
+        !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
     try {
       if (isDesktop) {
@@ -114,9 +114,7 @@ mixin ConversationActionsMixin on State<ChatScreen> {
         final tempFile = File('${tempDir.path}/$fileName');
         await tempFile.writeAsString(jsonString);
         await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(tempFile.path)],
-          ),
+          ShareParams(files: [XFile(tempFile.path)]),
         );
       }
     } catch (e) {
@@ -189,6 +187,14 @@ mixin ConversationActionsMixin on State<ChatScreen> {
       await DatabaseService.instance.setConversationMcpServers(
         newConversation.id,
         serverIds,
+      );
+    }
+    final localToolIds = await DatabaseService.instance
+        .getConversationLocalTools(widget.conversation.id);
+    if (localToolIds.isNotEmpty) {
+      await DatabaseService.instance.setConversationLocalTools(
+        newConversation.id,
+        localToolIds,
       );
     }
 

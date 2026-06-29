@@ -41,10 +41,24 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Joey needs access to your camera to take photos for sending in chat messages.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Joey needs access to your calendars when you enable local calendar tools for a chat.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Joey needs full calendar access when you enable local calendar tools to search, create, edit, and delete events.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Joey needs calendar write access when you enable local calendar tools to create and edit events.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Joey needs access to your contacts when you enable local contact tools for a chat.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Joey needs access to your location when you enable local location tools for a chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Joey needs access to your microphone to record audio for chat messages.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Joey needs access to your photo library to attach images to chat messages.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Joey needs access to your reminders when you enable local reminders tools for a chat.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Joey needs reminders access when you enable local reminders tools to search, create, edit, and delete reminders.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

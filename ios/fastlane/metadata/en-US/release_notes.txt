@@ -1,4 +1,4 @@
-• Background chat processing — Agentic loops now continue running when you navigate away from a conversation
-• Smoother streaming — Inline streaming cursor and stable scroll position
-• Improved MCP reliability — More robust session resumption and callback handling
-• Bug fixes — Fixed edit message dialog overflow, edit & resend crashes, and model-change status overflow
+• Local device tools — Enable on-device tools per chat for time, location, contacts, messages, calls, email, calendar, reminders, device info, URLs, and alarms
+• Safer actions — SMS, calls, email, URLs, and alarms now show clear confirmation cards before opening another app
+• Improved MCP setup — Local tools are visually separate from remote MCP servers and show permission status in debug
+• Bug fixes — Improved local tool URI encoding, iOS keyboard behavior while streaming, and native permission handling

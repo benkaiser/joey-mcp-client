@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/message.dart';
 import '../models/elicitation.dart';
 import '../providers/conversation_provider.dart';
@@ -28,22 +29,24 @@ class MessageList extends StatefulWidget {
   final Widget Function() buildAuthRequiredCard;
   final Widget Function()? buildLoadingIndicator;
   final Future<void> Function(String messageId, ConversationProvider provider)
-      onDeleteMessage;
+  onDeleteMessage;
   final Future<void> Function(Message message, ConversationProvider provider)
-      onEditMessage;
+  onEditMessage;
   final Future<void> Function(ConversationProvider provider)
-      onRegenerateLastResponse;
+  onRegenerateLastResponse;
   final Future<void> Function(
     String messageId,
     ElicitationRequest request,
     ElicitationAction action,
-  ) onUrlElicitationResponse;
+  )
+  onUrlElicitationResponse;
   final Future<void> Function(
     String messageId,
     ElicitationRequest request,
     ElicitationAction action,
     Map<String, dynamic>? content,
-  ) onFormElicitationResponse;
+  )
+  onFormElicitationResponse;
 
   // Display mode support
   final Map<String, String> webViewDisplayModes;
@@ -142,9 +145,11 @@ class _MessageListState extends State<MessageList> {
     super.didUpdateWidget(oldWidget);
 
     // If streaming stopped, clear frozen state
-    final isStreaming = widget.streamingContent.isNotEmpty ||
+    final isStreaming =
+        widget.streamingContent.isNotEmpty ||
         widget.streamingReasoning.isNotEmpty;
-    final wasStreaming = oldWidget.streamingContent.isNotEmpty ||
+    final wasStreaming =
+        oldWidget.streamingContent.isNotEmpty ||
         oldWidget.streamingReasoning.isNotEmpty;
     if (!isStreaming) {
       _frozenStreamingContent = null;
@@ -180,7 +185,10 @@ class _MessageListState extends State<MessageList> {
   }
 
   /// Build full context display for mcpAppContext messages when thinking is shown.
-  Widget _buildFullContextDisplay(BuildContext context, Message contextMessage) {
+  Widget _buildFullContextDisplay(
+    BuildContext context,
+    Message contextMessage,
+  ) {
     // Parse content blocks into widgets
     List<Widget> contentWidgets = [];
     try {
@@ -253,10 +261,14 @@ class _MessageListState extends State<MessageList> {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.2),
               ),
             ),
             child: Column(
@@ -273,13 +285,21 @@ class _MessageListState extends State<MessageList> {
   /// Build control bar above an inline WebView with display mode buttons.
 
   /// Build a placeholder for a WebView that is in fullscreen or PIP mode.
-  Widget _buildDisplayModePlaceholder(BuildContext context, String messageId, String currentMode) {
-    final modeLabel = currentMode == 'fullscreen' ? 'fullscreen' : 'picture-in-picture';
+  Widget _buildDisplayModePlaceholder(
+    BuildContext context,
+    String messageId,
+    String currentMode,
+  ) {
+    final modeLabel = currentMode == 'fullscreen'
+        ? 'fullscreen'
+        : 'picture-in-picture';
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
@@ -288,7 +308,9 @@ class _MessageListState extends State<MessageList> {
       child: Row(
         children: [
           Icon(
-            currentMode == 'fullscreen' ? Icons.fullscreen : Icons.picture_in_picture_alt,
+            currentMode == 'fullscreen'
+                ? Icons.fullscreen
+                : Icons.picture_in_picture_alt,
             size: 16,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -322,7 +344,9 @@ class _MessageListState extends State<MessageList> {
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
@@ -359,13 +383,188 @@ class _MessageListState extends State<MessageList> {
     );
   }
 
+  Widget _buildLocalActionToolResult(BuildContext context, Message message) {
+    Map<String, dynamic> data;
+    try {
+      data = jsonDecode(message.content) as Map<String, dynamic>;
+    } catch (_) {
+      data = const {};
+    }
+    final action =
+        data['action'] as String? ?? _actionFromToolName(message.toolName);
+    final url =
+        data['url'] as String? ??
+        _extractFirstUri(message.content) ??
+        message.content;
+    final displayUrl = data['displayUrl'] as String? ?? url;
+    final title = data['title'] as String? ?? _titleForLocalAction(action);
+    final label =
+        data['label'] as String? ?? _buttonLabelForLocalAction(action);
+    final uri = Uri.tryParse(url);
+    final detailRows = _localActionDetailRows(context, data);
+    final showRawUri = action == 'open_url';
+
+    return Padding(
+      key: ValueKey(message.id),
+      padding: const EdgeInsets.only(left: 16, bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _iconForLocalAction(action),
+                    size: 18,
+                    color: Theme.of(context).colorScheme.tertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...detailRows,
+              if (detailRows.isNotEmpty) const SizedBox(height: 8),
+              if (showRawUri) ...[
+                SelectableText(
+                  displayUrl,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                ),
+                const SizedBox(height: 12),
+              ],
+              FilledButton.icon(
+                onPressed: uri == null || !uri.hasScheme
+                    ? null
+                    : () =>
+                          launchUrl(uri, mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new),
+                label: Text(label),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _actionFromToolName(String? toolName) {
+    return switch (toolName) {
+      'local_compose_sms' => 'sms',
+      'local_call_phone_number' => 'call',
+      'local_compose_email' => 'email',
+      'local_open_url' => 'open_url',
+      _ => 'open_url',
+    };
+  }
+
+  bool _isLocalActionTool(String? toolName) {
+    return const {
+      'local_compose_sms',
+      'local_call_phone_number',
+      'local_compose_email',
+      'local_open_url',
+    }.contains(toolName);
+  }
+
+  String? _extractFirstUri(String content) {
+    final match = RegExp(
+      r'((?:https?|sms|tel|mailto):[^\s\)]+)',
+      caseSensitive: false,
+    ).firstMatch(content);
+    return match?.group(1);
+  }
+
+  String _titleForLocalAction(String action) {
+    return switch (action) {
+      'sms' => 'SMS draft',
+      'call' => 'Phone call',
+      'email' => 'Email draft',
+      _ => 'Open URL',
+    };
+  }
+
+  String _buttonLabelForLocalAction(String action) {
+    return switch (action) {
+      'sms' => 'Open SMS app',
+      'call' => 'Open dialer',
+      'email' => 'Open email app',
+      _ => 'Open URL',
+    };
+  }
+
+  IconData _iconForLocalAction(String action) {
+    return switch (action) {
+      'sms' => Icons.sms_outlined,
+      'call' => Icons.call_outlined,
+      'email' => Icons.email_outlined,
+      _ => Icons.open_in_new,
+    };
+  }
+
+  List<Widget> _localActionDetailRows(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
+    final rows = <Widget>[];
+    void addRow(String label, String? value) {
+      if (value == null || value.isEmpty) return;
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 92,
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SelectableText(
+                  value,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final action = data['action'] as String?;
+    addRow(action == 'sms' ? 'To' : 'Phone', data['phoneNumber'] as String?);
+    addRow('To', data['to'] as String?);
+    addRow('Subject', data['subject'] as String?);
+    addRow('Body', data['body'] as String?);
+    addRow('CC', data['cc'] as String?);
+    addRow('BCC', data['bcc'] as String?);
+    return rows;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ConversationProvider>(
       builder: (context, provider, child) {
         final messages = provider.getMessages(widget.conversationId);
 
-        final bool showEmptyState = messages.isEmpty &&
+        final bool showEmptyState =
+            messages.isEmpty &&
             widget.streamingContent.isEmpty &&
             widget.streamingReasoning.isEmpty &&
             !widget.isLoading;
@@ -386,8 +585,9 @@ class _MessageListState extends State<MessageList> {
                       Icon(
                         Icons.message_outlined,
                         size: 64,
-                        color: Theme.of(context).colorScheme.primary
-                            .withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -397,14 +597,9 @@ class _MessageListState extends State<MessageList> {
                       const SizedBox(height: 8),
                       Text(
                         'Type a message below to begin',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -439,8 +634,7 @@ class _MessageListState extends State<MessageList> {
           }
 
           // Show assistant messages with tool calls (as indicators when thinking disabled)
-          if (msg.role == MessageRole.assistant &&
-              msg.toolCallData != null) {
+          if (msg.role == MessageRole.assistant && msg.toolCallData != null) {
             return true;
           }
 
@@ -465,8 +659,10 @@ class _MessageListState extends State<MessageList> {
 
         // Use frozen content when user has scrolled up to prevent
         // the streaming bubble from growing and shifting their position.
-        final displayStreamingContent = _frozenStreamingContent ?? widget.streamingContent;
-        final displayStreamingReasoning = _frozenStreamingReasoning ?? widget.streamingReasoning;
+        final displayStreamingContent =
+            _frozenStreamingContent ?? widget.streamingContent;
+        final displayStreamingReasoning =
+            _frozenStreamingReasoning ?? widget.streamingReasoning;
 
         // Calculate total item count
         final hasStreaming =
@@ -481,7 +677,12 @@ class _MessageListState extends State<MessageList> {
 
         return ListView.builder(
           controller: widget.scrollController,
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 56),
+          padding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 56,
+          ),
           reverse: true,
           itemCount: itemCount,
           itemBuilder: (context, index) {
@@ -544,17 +745,14 @@ class _MessageListState extends State<MessageList> {
                 key: ValueKey(message.id),
                 message: message,
                 showThinking: widget.showThinking,
-                onDelete: () =>
-                    widget.onDeleteMessage(message.id, provider),
+                onDelete: () => widget.onDeleteMessage(message.id, provider),
                 onEdit: null,
               );
             }
 
             // Render elicitation messages as cards
             if (message.role == MessageRole.elicitation) {
-              final elicitationData = jsonDecode(
-                message.elicitationData!,
-              );
+              final elicitationData = jsonDecode(message.elicitationData!);
               final request = ElicitationRequest(
                 id: elicitationData['id'] ?? message.id,
                 mode: ElicitationMode.fromString(
@@ -573,8 +771,7 @@ class _MessageListState extends State<MessageList> {
                   ? ElicitationAction.fromString(responseStateStr)
                   : null;
               final submittedContent =
-                  elicitationData['submittedContent']
-                      as Map<String, dynamic>?;
+                  elicitationData['submittedContent'] as Map<String, dynamic>?;
 
               if (request.mode == ElicitationMode.url) {
                 return ElicitationUrlCard(
@@ -596,13 +793,12 @@ class _MessageListState extends State<MessageList> {
                   responseState: responseState,
                   submittedContent: submittedContent,
                   onRespond: responseState == null
-                      ? (action, content) =>
-                            widget.onFormElicitationResponse(
-                              message.id,
-                              request,
-                              action,
-                              content,
-                            )
+                      ? (action, content) => widget.onFormElicitationResponse(
+                          message.id,
+                          request,
+                          action,
+                          content,
+                        )
                       : null,
                 );
               }
@@ -610,6 +806,10 @@ class _MessageListState extends State<MessageList> {
 
             // Format tool result messages
             if (message.role == MessageRole.tool) {
+              if (_isLocalActionTool(message.toolName)) {
+                return _buildLocalActionToolResult(context, message);
+              }
+
               // Check for MCP App UI data (hasUiData is set even when uiData blob isn't loaded)
               if (message.hasUiData) {
                 // If uiData blob hasn't been loaded yet, show a loading placeholder
@@ -621,9 +821,7 @@ class _MessageListState extends State<MessageList> {
                       ThinkingIndicator(message: message),
                       SizedBox(
                         height: 300.0,
-                        child: Center(
-                          child: CircularProgressIndicator(),
-                        ),
+                        child: Center(child: CircularProgressIndicator()),
                       ),
                     ],
                   );
@@ -637,12 +835,15 @@ class _MessageListState extends State<MessageList> {
 
                   // Look up associated mcpAppContext message
                   final contextMessage = messages.cast<Message?>().firstWhere(
-                    (m) => m!.role == MessageRole.mcpAppContext && m.toolCallId == message.id,
+                    (m) =>
+                        m!.role == MessageRole.mcpAppContext &&
+                        m.toolCallId == message.id,
                     orElse: () => null,
                   );
 
                   // Determine current display mode for this WebView
-                  final currentDisplayMode = widget.webViewDisplayModes[message.id] ?? 'inline';
+                  final currentDisplayMode =
+                      widget.webViewDisplayModes[message.id] ?? 'inline';
 
                   // If hidden, render a compact "show" placeholder — no WebView mounted
                   if (currentDisplayMode == 'hidden') {
@@ -669,7 +870,11 @@ class _MessageListState extends State<MessageList> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         ThinkingIndicator(message: message),
-                        _buildDisplayModePlaceholder(context, message.id, currentDisplayMode),
+                        _buildDisplayModePlaceholder(
+                          context,
+                          message.id,
+                          currentDisplayMode,
+                        ),
                         if (contextMessage != null) ...[
                           if (!widget.showThinking)
                             ThinkingIndicator(message: contextMessage)
@@ -681,9 +886,13 @@ class _MessageListState extends State<MessageList> {
                   }
 
                   // Inline mode: render anchor placeholder (WebView is in ChatScreen Stack)
-                  final rawInlineHeight = widget.webViewHeights[message.id] ?? 300.0;
+                  final rawInlineHeight =
+                      widget.webViewHeights[message.id] ?? 300.0;
                   final screenHeight = MediaQuery.of(context).size.height;
-                  final inlineHeight = rawInlineHeight.clamp(50.0, screenHeight * 0.4);
+                  final inlineHeight = rawInlineHeight.clamp(
+                    50.0,
+                    screenHeight * 0.4,
+                  );
                   return Column(
                     key: ValueKey(message.id),
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -692,7 +901,9 @@ class _MessageListState extends State<MessageList> {
                       CompositedTransformTarget(
                         link: widget.layerLinkFor(message.id),
                         child: SizedBox(
-                          height: inlineHeight + 8.0, // +8 for vertical margin in the overlay
+                          height:
+                              inlineHeight +
+                              8.0, // +8 for vertical margin in the overlay
                         ),
                       ),
                       if (contextMessage != null) ...[
@@ -712,8 +923,7 @@ class _MessageListState extends State<MessageList> {
               // Show minimal indicator when thinking is disabled
               if (!widget.showThinking) {
                 // Still show images/audio even when thinking is hidden
-                if (message.imageData != null ||
-                    message.audioData != null) {
+                if (message.imageData != null || message.audioData != null) {
                   return Column(
                     key: ValueKey(message.id),
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -738,22 +948,27 @@ class _MessageListState extends State<MessageList> {
                     ],
                   );
                 }
-                return ThinkingIndicator(key: ValueKey(message.id), message: message);
+                return ThinkingIndicator(
+                  key: ValueKey(message.id),
+                  message: message,
+                );
               }
               // Check if this is an error result
               final isError =
                   message.content.startsWith(
                     'Failed to parse tool arguments',
                   ) ||
-                  message.content.startsWith(
-                    'Error executing tool',
-                  ) ||
+                  message.content.startsWith('Error executing tool') ||
+                  message.content.startsWith('Error executing local tool') ||
                   message.content.startsWith('Tool not found') ||
                   message.content.startsWith('MCP error');
               final icon = isError ? '❌' : '✅';
+              final sourceLabel = message.toolName?.startsWith('local_') == true
+                  ? 'Local result from'
+                  : 'Result from';
               final formattedMessage = message.copyWith(
                 content:
-                    '$icon **Result from ${message.toolName}:**\n\n${message.content}',
+                    '$icon **$sourceLabel ${message.toolName}:**\n\n${message.content}',
               );
               return MessageBubble(
                 key: ValueKey(message.id),
@@ -769,17 +984,18 @@ class _MessageListState extends State<MessageList> {
             if (message.role == MessageRole.mcpNotification) {
               // Show minimal indicator when thinking is disabled
               if (!widget.showThinking) {
-                return ThinkingIndicator(key: ValueKey(message.id), message: message);
+                return ThinkingIndicator(
+                  key: ValueKey(message.id),
+                  message: message,
+                );
               }
               // Full notification display is handled by MessageBubble
               return MessageBubble(
                 key: ValueKey(message.id),
                 message: message,
                 showThinking: widget.showThinking,
-                onDelete: () =>
-                    widget.onDeleteMessage(message.id, provider),
-                onEdit:
-                    null, // Notification messages can't be edited
+                onDelete: () => widget.onDeleteMessage(message.id, provider),
+                onEdit: null, // Notification messages can't be edited
               );
             }
 
@@ -788,26 +1004,30 @@ class _MessageListState extends State<MessageList> {
                 message.toolCallData != null) {
               // Show minimal indicator when thinking is disabled
               if (!widget.showThinking) {
-                return ThinkingIndicator(key: ValueKey(message.id), message: message);
+                return ThinkingIndicator(
+                  key: ValueKey(message.id),
+                  message: message,
+                );
               }
 
               // Build tool call display content
               String toolCallContent = '';
 
               try {
-                final toolCalls =
-                    jsonDecode(message.toolCallData!) as List;
+                final toolCalls = jsonDecode(message.toolCallData!) as List;
                 for (final toolCall in toolCalls) {
                   final toolName = toolCall['function']['name'];
-                  final toolArgsStr =
-                      toolCall['function']['arguments'];
+                  final toolArgsStr = toolCall['function']['arguments'];
 
                   if (toolCallContent.isNotEmpty) {
                     toolCallContent += '\n\n';
                   }
 
-                  toolCallContent +=
-                      '🔧 **Calling tool:** $toolName';
+                  final isLocalTool =
+                      toolName is String && toolName.startsWith('local_');
+                  toolCallContent += isLocalTool
+                      ? '📱 **Calling local device tool:** $toolName'
+                      : '🔧 **Calling tool:** $toolName';
 
                   // Add formatted arguments
                   try {
@@ -817,16 +1037,13 @@ class _MessageListState extends State<MessageList> {
                         const JsonCodec().decode(toolArgsStr),
                       );
                     } else {
-                      toolArgs = Map<String, dynamic>.from(
-                        toolArgsStr,
-                      );
+                      toolArgs = Map<String, dynamic>.from(toolArgsStr);
                     }
 
                     if (toolArgs.isNotEmpty) {
-                      final prettyArgs =
-                          const JsonEncoder.withIndent(
-                            '  ',
-                          ).convert(toolArgs);
+                      final prettyArgs = const JsonEncoder.withIndent(
+                        '  ',
+                      ).convert(toolArgs);
                       toolCallContent +=
                           '\n\nArguments:\n```json\n$prettyArgs\n```';
                     }
@@ -842,8 +1059,7 @@ class _MessageListState extends State<MessageList> {
 
               // Move original content to reasoning field (thinking bubble)
               // and show tool calls as the main content
-              String displayReasoning = (message.reasoning ?? '')
-                  .trim();
+              String displayReasoning = (message.reasoning ?? '').trim();
               final trimmedContent = message.content.trim();
 
               if (trimmedContent.isNotEmpty) {
@@ -885,8 +1101,7 @@ class _MessageListState extends State<MessageList> {
               onEdit: message.role == MessageRole.user
                   ? () => widget.onEditMessage(message, provider)
                   : null,
-              onRegenerate:
-                  message.id == lastAssistantContentMessageId
+              onRegenerate: message.id == lastAssistantContentMessageId
                   ? () => widget.onRegenerateLastResponse(provider)
                   : null,
             );

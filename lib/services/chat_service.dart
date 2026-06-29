@@ -12,6 +12,7 @@ import 'mcp_app_ui_service.dart';
 import 'default_model_service.dart';
 import 'chat_events.dart';
 import 'sampling_processor.dart';
+import 'local_tool_service.dart';
 
 export 'chat_events.dart';
 
@@ -47,6 +48,7 @@ class ChatService {
   final Map<String, String> _serverNames; // serverId -> server name
   McpAppUiService? _uiService;
   final Map<String, List<McpTool>> _appOnlyTools;
+  LocalToolService? _localToolService;
   late final SamplingProcessor _samplingProcessor;
 
   ChatService({
@@ -56,12 +58,14 @@ class ChatService {
     Map<String, String>? serverNames,
     McpAppUiService? uiService,
     Map<String, List<McpTool>>? appOnlyTools,
+    LocalToolService? localToolService,
   }) : _openRouterService = openRouterService,
        _mcpClients = mcpClients,
        _mcpTools = mcpTools,
        _serverNames = serverNames ?? {},
        _uiService = uiService,
-       _appOnlyTools = appOnlyTools ?? {} {
+       _appOnlyTools = appOnlyTools ?? {},
+       _localToolService = localToolService {
     _samplingProcessor = SamplingProcessor(
       openRouterService: _openRouterService,
       executeToolCalls: _executeToolCalls,
@@ -154,6 +158,7 @@ class ChatService {
     required Map<String, String> serverNames,
     McpAppUiService? uiService,
     Map<String, List<McpTool>>? appOnlyTools,
+    LocalToolService? localToolService,
   }) {
     // Update server names
     _serverNames.clear();
@@ -225,6 +230,7 @@ class ChatService {
         _appOnlyTools.addAll(appOnlyTools);
       }
     }
+    _localToolService = localToolService;
   }
 
   /// Flush any pending notifications that were queued during streaming
@@ -369,326 +375,336 @@ class ChatService {
     }
 
     try {
+      while (unlimited || iterationCount < maxIterations) {
+        iterationCount++;
 
-    while (unlimited || iterationCount < maxIterations) {
-      iterationCount++;
+        // Build API messages from current message list, prepending system prompt
+        // Filter out elicitation messages (they return null from toApiMessage)
+        final apiMessages = <Map<String, dynamic>>[
+          {'role': 'system', 'content': systemPrompt},
+        ];
+        for (final msg in messages) {
+          final apiMsg = msg.toApiMessage();
+          if (apiMsg == null) continue;
 
-      // Build API messages from current message list, prepending system prompt
-      // Filter out elicitation messages (they return null from toApiMessage)
-      final apiMessages = <Map<String, dynamic>>[
-        {'role': 'system', 'content': systemPrompt},
-      ];
-      for (final msg in messages) {
-        final apiMsg = msg.toApiMessage();
-        if (apiMsg == null) continue;
-
-        // Strip unsupported media from user messages with multipart content
-        if (apiMsg['role'] == 'user' && apiMsg['content'] is List) {
-          final parts = (apiMsg['content'] as List).cast<Map<String, dynamic>>();
-          final filtered = parts.where((part) {
-            if (!modelSupportsImages && part['type'] == 'image_url') return false;
-            if (!modelSupportsAudio && part['type'] == 'input_audio') return false;
-            return true;
-          }).toList();
-
-          if (filtered.isEmpty) {
-            // All content was stripped — skip this message entirely
-            continue;
-          }
-
-          if (filtered.length == 1 && filtered.first['type'] == 'text') {
-            // Simplify to plain string
-            apiMsg['content'] = filtered.first['text'] as String;
-          } else {
-            apiMsg['content'] = filtered;
-          }
-        }
-
-        apiMessages.add(apiMsg);
-
-        // If the model supports images and this tool result has image data,
-        // inject a user message with the images so the LLM can see them
-        if (modelSupportsImages &&
-            msg.role == MessageRole.tool &&
-            msg.imageData != null) {
-          try {
-            final images = jsonDecode(msg.imageData!) as List;
-            if (images.isNotEmpty) {
-              final contentParts = <Map<String, dynamic>>[
-                {
-                  'type': 'text',
-                  'text':
-                      '[Images returned by tool "${msg.toolName ?? 'unknown'}"]',
-                },
-              ];
-              for (final img in images) {
-                final data = img['data'] as String;
-                final mimeType = img['mimeType'] as String? ?? 'image/png';
-                contentParts.add({
-                  'type': 'image_url',
-                  'image_url': {'url': 'data:$mimeType;base64,$data'},
-                });
+          // Strip unsupported media from user messages with multipart content
+          if (apiMsg['role'] == 'user' && apiMsg['content'] is List) {
+            final parts = (apiMsg['content'] as List)
+                .cast<Map<String, dynamic>>();
+            final filtered = parts.where((part) {
+              if (!modelSupportsImages && part['type'] == 'image_url') {
+                return false;
               }
-              apiMessages.add({'role': 'user', 'content': contentParts});
-            }
-          } catch (e) {
-            print('ChatService: Failed to inject images: $e');
-          }
-        }
+              if (!modelSupportsAudio && part['type'] == 'input_audio') {
+                return false;
+              }
+              return true;
+            }).toList();
 
-        // If the model supports audio and this tool result has audio data,
-        // inject a user message with the audio so the LLM can process it
-        if (modelSupportsAudio &&
-            msg.role == MessageRole.tool &&
-            msg.audioData != null) {
-          try {
-            final audioList = jsonDecode(msg.audioData!) as List;
-            if (audioList.isNotEmpty) {
-              final contentParts = <Map<String, dynamic>>[
-                {
-                  'type': 'text',
-                  'text':
-                      '[Audio returned by tool "${msg.toolName ?? 'unknown'}"]',
-                },
-              ];
-              for (final audio in audioList) {
-                final data = audio['data'] as String;
-                final mimeType = audio['mimeType'] as String? ?? 'audio/wav';
-                contentParts.add({
-                  'type': 'input_audio',
-                  'input_audio': {
-                    'data': data,
-                    'format': _audioFormatFromMimeType(mimeType),
+            if (filtered.isEmpty) {
+              // All content was stripped — skip this message entirely
+              continue;
+            }
+
+            if (filtered.length == 1 && filtered.first['type'] == 'text') {
+              // Simplify to plain string
+              apiMsg['content'] = filtered.first['text'] as String;
+            } else {
+              apiMsg['content'] = filtered;
+            }
+          }
+
+          apiMessages.add(apiMsg);
+
+          // If the model supports images and this tool result has image data,
+          // inject a user message with the images so the LLM can see them
+          if (modelSupportsImages &&
+              msg.role == MessageRole.tool &&
+              msg.imageData != null) {
+            try {
+              final images = jsonDecode(msg.imageData!) as List;
+              if (images.isNotEmpty) {
+                final contentParts = <Map<String, dynamic>>[
+                  {
+                    'type': 'text',
+                    'text':
+                        '[Images returned by tool "${msg.toolName ?? 'unknown'}"]',
                   },
-                });
+                ];
+                for (final img in images) {
+                  final data = img['data'] as String;
+                  final mimeType = img['mimeType'] as String? ?? 'image/png';
+                  contentParts.add({
+                    'type': 'image_url',
+                    'image_url': {'url': 'data:$mimeType;base64,$data'},
+                  });
+                }
+                apiMessages.add({'role': 'user', 'content': contentParts});
               }
-              apiMessages.add({'role': 'user', 'content': contentParts});
+            } catch (e) {
+              print('ChatService: Failed to inject images: $e');
             }
-          } catch (e) {
-            print('ChatService: Failed to inject audio: $e');
+          }
+
+          // If the model supports audio and this tool result has audio data,
+          // inject a user message with the audio so the LLM can process it
+          if (modelSupportsAudio &&
+              msg.role == MessageRole.tool &&
+              msg.audioData != null) {
+            try {
+              final audioList = jsonDecode(msg.audioData!) as List;
+              if (audioList.isNotEmpty) {
+                final contentParts = <Map<String, dynamic>>[
+                  {
+                    'type': 'text',
+                    'text':
+                        '[Audio returned by tool "${msg.toolName ?? 'unknown'}"]',
+                  },
+                ];
+                for (final audio in audioList) {
+                  final data = audio['data'] as String;
+                  final mimeType = audio['mimeType'] as String? ?? 'audio/wav';
+                  contentParts.add({
+                    'type': 'input_audio',
+                    'input_audio': {
+                      'data': data,
+                      'format': _audioFormatFromMimeType(mimeType),
+                    },
+                  });
+                }
+                apiMessages.add({'role': 'user', 'content': contentParts});
+              }
+            } catch (e) {
+              print('ChatService: Failed to inject audio: $e');
+            }
           }
         }
-      }
 
-      print(
-        'ChatService: Iteration $iterationCount with ${apiMessages.length} messages',
-      );
+        print(
+          'ChatService: Iteration $iterationCount with ${apiMessages.length} messages',
+        );
 
-      // Aggregate all tools from MCP servers
-      final allTools = <Map<String, dynamic>>[];
-      for (final tools in _mcpTools.values) {
-        allTools.addAll(tools.map((t) => t.toJson()));
-      }
+        // Aggregate all tools from MCP servers
+        final allTools = <Map<String, dynamic>>[];
+        for (final tools in _mcpTools.values) {
+          allTools.addAll(tools.map((t) => t.toJson()));
+        }
+        if (_localToolService != null) {
+          allTools.addAll(
+            _localToolService!.enabledTools.map((t) => t.toJson()),
+          );
+        }
 
-      // Stream the API response
-      String streamedContent = '';
-      String streamedReasoning = '';
-      List<dynamic>? detectedToolCalls;
-      Map<String, dynamic>? usageData;
+        // Stream the API response
+        String streamedContent = '';
+        String streamedReasoning = '';
+        List<dynamic>? detectedToolCalls;
+        Map<String, dynamic>? usageData;
 
-      // Start streaming - mark as streaming to queue notifications
-      _isStreaming = true;
-      _eventController.add(StreamingStarted(iteration: iterationCount));
+        // Start streaming - mark as streaming to queue notifications
+        _isStreaming = true;
+        _eventController.add(StreamingStarted(iteration: iterationCount));
 
-      try {
-        await for (final chunk in _openRouterService.chatCompletionStream(
-          model: model,
-          messages: apiMessages,
-          tools: allTools.isNotEmpty ? allTools : null,
-          cancelToken: _cancelToken,
-        )) {
-          // Check if this chunk contains tool call information
-          if (chunk.startsWith('TOOL_CALLS:')) {
-            final toolCallsJson = chunk.substring('TOOL_CALLS:'.length);
-            try {
-              detectedToolCalls = jsonDecode(toolCallsJson) as List;
-              print(
-                'ChatService: Detected ${detectedToolCalls.length} tool calls',
-              );
-            } catch (e) {
-              print('ChatService: Failed to parse tool calls: $e');
+        try {
+          await for (final chunk in _openRouterService.chatCompletionStream(
+            model: model,
+            messages: apiMessages,
+            tools: allTools.isNotEmpty ? allTools : null,
+            cancelToken: _cancelToken,
+          )) {
+            // Check if this chunk contains tool call information
+            if (chunk.startsWith('TOOL_CALLS:')) {
+              final toolCallsJson = chunk.substring('TOOL_CALLS:'.length);
+              try {
+                detectedToolCalls = jsonDecode(toolCallsJson) as List;
+                print(
+                  'ChatService: Detected ${detectedToolCalls.length} tool calls',
+                );
+              } catch (e) {
+                print('ChatService: Failed to parse tool calls: $e');
+              }
+            } else if (chunk.startsWith('USAGE:')) {
+              final usageJson = chunk.substring('USAGE:'.length);
+              try {
+                usageData = jsonDecode(usageJson) as Map<String, dynamic>;
+                print('ChatService: Received usage data: $usageData');
+              } catch (e) {
+                print('ChatService: Failed to parse usage data: $e');
+              }
+            } else if (chunk.startsWith('REASONING:')) {
+              streamedReasoning += chunk.substring('REASONING:'.length);
+              _partialReasoning = streamedReasoning;
+              _eventController.add(ReasoningChunk(content: streamedReasoning));
+            } else {
+              streamedContent += chunk;
+              _partialContent = streamedContent;
+              _eventController.add(ContentChunk(content: streamedContent));
             }
-          } else if (chunk.startsWith('USAGE:')) {
-            final usageJson = chunk.substring('USAGE:'.length);
-            try {
-              usageData = jsonDecode(usageJson) as Map<String, dynamic>;
-              print('ChatService: Received usage data: $usageData');
-            } catch (e) {
-              print('ChatService: Failed to parse usage data: $e');
-            }
-          } else if (chunk.startsWith('REASONING:')) {
-            streamedReasoning += chunk.substring('REASONING:'.length);
-            _partialReasoning = streamedReasoning;
-            _eventController.add(ReasoningChunk(content: streamedReasoning));
+          }
+        } on DioException catch (e) {
+          if (e.type == DioExceptionType.cancel) {
+            // Request was cancelled - this is expected, don't emit error
+            print('ChatService: Request cancelled by user');
+            return;
           } else {
-            streamedContent += chunk;
-            _partialContent = streamedContent;
-            _eventController.add(ContentChunk(content: streamedContent));
+            _eventController.add(ErrorOccurred(error: e.toString()));
+            rethrow;
           }
-        }
-      } on DioException catch (e) {
-        if (e.type == DioExceptionType.cancel) {
-          // Request was cancelled - this is expected, don't emit error
-          print('ChatService: Request cancelled by user');
-          return;
-        } else {
+        } on OpenRouterAuthException {
+          _eventController.add(AuthenticationRequired());
+          rethrow;
+        } on OpenRouterPaymentRequiredException {
+          _eventController.add(PaymentRequired());
+          rethrow;
+        } on OpenRouterRateLimitException catch (e) {
+          _eventController.add(RateLimitExceeded(message: e.message));
+          rethrow;
+        } catch (e) {
           _eventController.add(ErrorOccurred(error: e.toString()));
           rethrow;
         }
-      } on OpenRouterAuthException {
-        _eventController.add(AuthenticationRequired());
-        rethrow;
-      } on OpenRouterPaymentRequiredException {
-        _eventController.add(PaymentRequired());
-        rethrow;
-      } on OpenRouterRateLimitException catch (e) {
-        _eventController.add(RateLimitExceeded(message: e.message));
-        rethrow;
-      } catch (e) {
-        _eventController.add(ErrorOccurred(error: e.toString()));
-        rethrow;
-      }
 
-      print(
-        'ChatService: Stream complete. Content: ${streamedContent.length} chars, Tool calls: ${detectedToolCalls?.length ?? 0}',
-      );
-
-      // If request was cancelled, don't process the response (partial message already created)
-      if (_wasCancelled) {
-        print('ChatService: Request was cancelled, skipping message creation');
-        return;
-      }
-
-      if (detectedToolCalls != null && detectedToolCalls.isNotEmpty) {
         print(
-          'ChatService: Processing ${detectedToolCalls.length} tool call(s)',
+          'ChatService: Stream complete. Content: ${streamedContent.length} chars, Tool calls: ${detectedToolCalls?.length ?? 0}',
         );
 
-        // Create assistant message with thinking content and tool calls
-        final assistantMessage = Message(
-          id: const Uuid().v4(),
-          conversationId: conversationId,
-          role: MessageRole.assistant,
-          content: streamedContent.trim(),
-          timestamp: DateTime.now(),
-          reasoning: streamedReasoning.trim().isNotEmpty
-              ? streamedReasoning.trim()
-              : null,
-          toolCallData: jsonEncode(detectedToolCalls),
-          usageData: usageData != null ? jsonEncode(usageData) : null,
-        );
-
-        _eventController.add(MessageCreated(message: assistantMessage));
-        messages.add(assistantMessage);
-
-        // Emit usage event if available
-        if (usageData != null) {
-          _eventController.add(UsageReceived(usage: usageData));
+        // If request was cancelled, don't process the response (partial message already created)
+        if (_wasCancelled) {
+          print(
+            'ChatService: Request was cancelled, skipping message creation',
+          );
+          return;
         }
 
-        // Execute tool calls
-        final toolResults = await _executeToolCalls(detectedToolCalls);
-
-        // Create tool result messages
-        for (final result in toolResults) {
-          final toolMessage = Message(
-            id: const Uuid().v4(),
-            conversationId: conversationId,
-            role: MessageRole.tool,
-            content: result['result'] as String,
-            timestamp: DateTime.now(),
-            toolCallId: result['toolId'] as String,
-            toolName: result['toolName'] as String,
-            imageData: result['imageData'] as String?,
-            audioData: result['audioData'] as String?,
-            uiData: result['uiData'] as String?,
+        if (detectedToolCalls != null && detectedToolCalls.isNotEmpty) {
+          print(
+            'ChatService: Processing ${detectedToolCalls.length} tool call(s)',
           );
 
-          _eventController.add(MessageCreated(message: toolMessage));
-          messages.add(toolMessage);
-        }
+          // Create assistant message with thinking content and tool calls
+          final assistantMessage = Message(
+            id: const Uuid().v4(),
+            conversationId: conversationId,
+            role: MessageRole.assistant,
+            content: streamedContent.trim(),
+            timestamp: DateTime.now(),
+            reasoning: streamedReasoning.trim().isNotEmpty
+                ? streamedReasoning.trim()
+                : null,
+            toolCallData: jsonEncode(detectedToolCalls),
+            usageData: usageData != null ? jsonEncode(usageData) : null,
+          );
 
-        // Flush any notifications that were queued during streaming
-        // They will appear after the assistant response but before the next LLM call
-        _flushPendingNotifications();
+          _eventController.add(MessageCreated(message: assistantMessage));
+          messages.add(assistantMessage);
 
-        // Continue loop for next iteration
-      } else {
-        // No tool calls - this is the final response
-        print('ChatService: Final response received');
+          // Emit usage event if available
+          if (usageData != null) {
+            _eventController.add(UsageReceived(usage: usageData));
+          }
 
-        // If content is empty but we have reasoning, move reasoning to content
-        // This ensures the message is visible even when thinking is hidden
-        final hasContent = streamedContent.trim().isNotEmpty;
-        final hasReasoning = streamedReasoning.trim().isNotEmpty;
+          // Execute tool calls
+          final toolResults = await _executeToolCalls(detectedToolCalls);
 
-        final String finalContent;
-        final String? finalReasoning;
+          // Create tool result messages
+          for (final result in toolResults) {
+            final toolMessage = Message(
+              id: const Uuid().v4(),
+              conversationId: conversationId,
+              role: MessageRole.tool,
+              content: result['result'] as String,
+              timestamp: DateTime.now(),
+              toolCallId: result['toolId'] as String,
+              toolName: result['toolName'] as String,
+              imageData: result['imageData'] as String?,
+              audioData: result['audioData'] as String?,
+              uiData: result['uiData'] as String?,
+            );
 
-        if (!hasContent && hasReasoning) {
-          // Move reasoning to content so it's always visible
-          finalContent = streamedReasoning.trim();
-          finalReasoning = null;
+            _eventController.add(MessageCreated(message: toolMessage));
+            messages.add(toolMessage);
+          }
+
+          // Flush any notifications that were queued during streaming
+          // They will appear after the assistant response but before the next LLM call
+          _flushPendingNotifications();
+
+          // Continue loop for next iteration
         } else {
-          finalContent = streamedContent;
-          finalReasoning = hasReasoning ? streamedReasoning.trim() : null;
+          // No tool calls - this is the final response
+          print('ChatService: Final response received');
+
+          // If content is empty but we have reasoning, move reasoning to content
+          // This ensures the message is visible even when thinking is hidden
+          final hasContent = streamedContent.trim().isNotEmpty;
+          final hasReasoning = streamedReasoning.trim().isNotEmpty;
+
+          final String finalContent;
+          final String? finalReasoning;
+
+          if (!hasContent && hasReasoning) {
+            // Move reasoning to content so it's always visible
+            finalContent = streamedReasoning.trim();
+            finalReasoning = null;
+          } else {
+            finalContent = streamedContent;
+            finalReasoning = hasReasoning ? streamedReasoning.trim() : null;
+          }
+
+          final finalMessage = Message(
+            id: const Uuid().v4(),
+            conversationId: conversationId,
+            role: MessageRole.assistant,
+            content: finalContent,
+            timestamp: DateTime.now(),
+            reasoning: finalReasoning,
+            usageData: usageData != null ? jsonEncode(usageData) : null,
+          );
+
+          _eventController.add(MessageCreated(message: finalMessage));
+          messages.add(finalMessage);
+
+          // Emit usage event if available
+          if (usageData != null) {
+            _eventController.add(UsageReceived(usage: usageData));
+          }
+
+          // Dump final message state to console
+          print('\n===== FINAL MESSAGE DUMP =====');
+          for (int i = 0; i < messages.length; i++) {
+            final msg = messages[i];
+            print('Message $i:');
+            print('  Role: ${msg.role.toString()}');
+            print('  Content: ${msg.content}');
+            if (msg.reasoning != null) {
+              print('  Reasoning: ${msg.reasoning}');
+            }
+            if (msg.toolCallData != null) {
+              print('  Tool Call Data: ${msg.toolCallData}');
+            }
+            if (msg.toolName != null) {
+              print('  Tool Name: ${msg.toolName}');
+            }
+            if (msg.toolCallId != null) {
+              print('  Tool Call ID: ${msg.toolCallId}');
+            }
+            print('');
+          }
+          print('==============================\n');
+
+          // Flush any pending notifications before completing
+          _flushPendingNotifications();
+
+          _eventController.add(ConversationComplete());
+          break;
         }
-
-        final finalMessage = Message(
-          id: const Uuid().v4(),
-          conversationId: conversationId,
-          role: MessageRole.assistant,
-          content: finalContent,
-          timestamp: DateTime.now(),
-          reasoning: finalReasoning,
-          usageData: usageData != null ? jsonEncode(usageData) : null,
-        );
-
-        _eventController.add(MessageCreated(message: finalMessage));
-        messages.add(finalMessage);
-
-        // Emit usage event if available
-        if (usageData != null) {
-          _eventController.add(UsageReceived(usage: usageData));
-        }
-
-        // Dump final message state to console
-        print('\n===== FINAL MESSAGE DUMP =====');
-        for (int i = 0; i < messages.length; i++) {
-          final msg = messages[i];
-          print('Message $i:');
-          print('  Role: ${msg.role.toString()}');
-          print('  Content: ${msg.content}');
-          if (msg.reasoning != null) {
-            print('  Reasoning: ${msg.reasoning}');
-          }
-          if (msg.toolCallData != null) {
-            print('  Tool Call Data: ${msg.toolCallData}');
-          }
-          if (msg.toolName != null) {
-            print('  Tool Name: ${msg.toolName}');
-          }
-          if (msg.toolCallId != null) {
-            print('  Tool Call ID: ${msg.toolCallId}');
-          }
-          print('');
-        }
-        print('==============================\n');
-
-        // Flush any pending notifications before completing
-        _flushPendingNotifications();
-
-        _eventController.add(ConversationComplete());
-        break;
       }
-    }
 
-    if (!unlimited && iterationCount >= maxIterations) {
-      print('ChatService: Warning - Maximum iterations reached');
-      _flushPendingNotifications();
-      _eventController.add(MaxIterationsReached());
-    }
-
+      if (!unlimited && iterationCount >= maxIterations) {
+        print('ChatService: Warning - Maximum iterations reached');
+        _flushPendingNotifications();
+        _eventController.add(MaxIterationsReached());
+      }
     } finally {
       // Always release the wakelock when the agentic loop exits,
       // whether it completed normally, errored, or was cancelled.
@@ -744,6 +760,27 @@ class ChatService {
       String? imageDataJson;
       String? audioDataJson;
       String? uiDataJson;
+
+      if (_localToolService?.canExecute(toolName) == true) {
+        try {
+          final localResult = await _localToolService!.executeToolCall(
+            Map<String, dynamic>.from(toolCall as Map),
+          );
+          result = localResult.result;
+        } catch (e) {
+          result = 'Error executing local tool: $e';
+        }
+
+        _eventController.add(
+          ToolExecutionCompleted(
+            toolId: toolId,
+            toolName: toolName,
+            result: result,
+          ),
+        );
+
+        return {'toolId': toolId, 'toolName': toolName, 'result': result};
+      }
 
       // Search both LLM-visible and app-only tools
       final allToolEntries = <String, List<McpTool>>{};
@@ -807,13 +844,29 @@ class ChatService {
                   orElse: () => null,
                 );
                 if (toolDef != null) {
-                  final uiResource = _uiService!.getResource(toolDef.uiResourceUri!);
+                  final uiResource = _uiService!.getResource(
+                    toolDef.uiResourceUri!,
+                  );
                   if (uiResource != null) {
                     // Build serializable content list for the UI
                     final uiContentList = toolResult.content.map((c) {
-                      if (c.type == 'text') return {'type': 'text', 'text': c.text};
-                      if (c.type == 'image') return {'type': 'image', 'data': c.data, 'mimeType': c.mimeType};
-                      if (c.type == 'audio') return {'type': 'audio', 'data': c.data, 'mimeType': c.mimeType};
+                      if (c.type == 'text') {
+                        return {'type': 'text', 'text': c.text};
+                      }
+                      if (c.type == 'image') {
+                        return {
+                          'type': 'image',
+                          'data': c.data,
+                          'mimeType': c.mimeType,
+                        };
+                      }
+                      if (c.type == 'audio') {
+                        return {
+                          'type': 'audio',
+                          'data': c.data,
+                          'mimeType': c.mimeType,
+                        };
+                      }
                       return {'type': c.type};
                     }).toList();
 
@@ -836,7 +889,10 @@ class ChatService {
           } on McpAuthRequiredException catch (e) {
             result = 'Error: Authentication required for MCP server';
             _eventController.add(
-              McpAuthRequiredForServer(serverId: serverId, serverUrl: e.serverUrl),
+              McpAuthRequiredForServer(
+                serverId: serverId,
+                serverUrl: e.serverUrl,
+              ),
             );
           } catch (e) {
             result = 'Error executing tool: $e';

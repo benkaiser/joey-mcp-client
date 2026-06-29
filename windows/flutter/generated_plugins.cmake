@@ -7,6 +7,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   file_selector_windows
   flutter_inappwebview_windows
+  flutter_timezone
+  geolocator_windows
   pasteboard
   record_windows
   share_plus

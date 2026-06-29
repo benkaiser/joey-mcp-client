@@ -4,6 +4,7 @@ import '../models/mcp_server.dart';
 import '../services/mcp_client_service.dart';
 import '../services/mcp_server_manager.dart';
 import '../services/mcp_oauth_manager.dart';
+import '../services/local_tool_service.dart';
 
 /// Screen showing detailed debug information about connected MCP servers
 /// and their tools with expandable parameter details.
@@ -14,12 +15,14 @@ import '../services/mcp_oauth_manager.dart';
 class McpDebugScreen extends StatefulWidget {
   final McpServerManager serverManager;
   final McpOAuthManager oauthManager;
+  final LocalToolService localToolService;
   final String conversationId;
 
   const McpDebugScreen({
     super.key,
     required this.serverManager,
     required this.oauthManager,
+    required this.localToolService,
     required this.conversationId,
   });
 
@@ -117,24 +120,27 @@ class _McpDebugScreenState extends State<McpDebugScreen> {
   @override
   Widget build(BuildContext context) {
     final servers = _sm.mcpServers;
+    final localTools = widget.localToolService.enabledDefinitions;
+    final itemCount = servers.length + (localTools.isNotEmpty ? 1 : 0);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('MCP Debug'),
-      ),
-      body: servers.isEmpty
+      appBar: AppBar(title: const Text('MCP Debug')),
+      body: itemCount == 0
           ? Center(
               child: Text(
-                'No MCP servers configured',
+                'No MCP servers or local tools enabled',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: servers.length,
+              itemCount: itemCount,
               itemBuilder: (context, index) {
+                if (index == servers.length && localTools.isNotEmpty) {
+                  return _LocalToolsSection(localTools: localTools);
+                }
                 final server = servers[index];
                 final actionInProgress = _serverActionInProgress[server.id];
                 return _ServerSection(
@@ -154,11 +160,204 @@ class _McpDebugScreenState extends State<McpDebugScreen> {
   }
 }
 
+class _LocalToolsSection extends StatefulWidget {
+  final List<LocalToolDefinition> localTools;
+
+  const _LocalToolsSection({required this.localTools});
+
+  @override
+  State<_LocalToolsSection> createState() => _LocalToolsSectionState();
+}
+
+class _LocalToolsSectionState extends State<_LocalToolsSection> {
+  bool _toolsExpanded = true;
+  late Future<Map<String, String>> _permissionStatuses;
+
+  @override
+  void initState() {
+    super.initState();
+    _permissionStatuses = _loadPermissionStatuses();
+  }
+
+  @override
+  void didUpdateWidget(_LocalToolsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.localTools.map((tool) => tool.id).join(',') !=
+        widget.localTools.map((tool) => tool.id).join(',')) {
+      _permissionStatuses = _loadPermissionStatuses();
+    }
+  }
+
+  Future<Map<String, String>> _loadPermissionStatuses() async {
+    final statuses = <String, String>{};
+    for (final tool in widget.localTools) {
+      statuses[tool.id] = await LocalToolService.permissionStatusForTool(
+        tool.id,
+      );
+    }
+    return statuses;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final groupedTools = <String, List<LocalToolDefinition>>{};
+    for (final tool in widget.localTools) {
+      groupedTools.putIfAbsent(tool.groupName, () => []).add(tool);
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.phone_iphone,
+                  color: theme.colorScheme.tertiary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Local Device Tools',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _DetailRow(label: 'Status', value: 'Enabled on this device'),
+            _DetailRow(
+              label: 'Tool count',
+              value: '${widget.localTools.length}',
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => setState(() => _toolsExpanded = !_toolsExpanded),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Tools (${widget.localTools.length})',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _toolsExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_toolsExpanded)
+              FutureBuilder<Map<String, String>>(
+                future: _permissionStatuses,
+                builder: (context, snapshot) {
+                  final statuses = snapshot.data ?? const <String, String>{};
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: groupedTools.entries.map((entry) {
+                      return _LocalToolGroup(
+                        groupName: entry.key,
+                        tools: entry.value,
+                        permissionStatuses: statuses,
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalToolGroup extends StatelessWidget {
+  final String groupName;
+  final List<LocalToolDefinition> tools;
+  final Map<String, String> permissionStatuses;
+
+  const _LocalToolGroup({
+    required this.groupName,
+    required this.tools,
+    required this.permissionStatuses,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Text(
+              groupName,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ...tools.map((tool) {
+            final status = permissionStatuses[tool.id] ?? 'Checking...';
+            final granted =
+                status == 'Granted' ||
+                status == 'No permission required' ||
+                status == 'Limited';
+            return ListTile(
+              dense: true,
+              leading: Icon(
+                granted ? Icons.check_circle : Icons.error_outline,
+                color: granted ? Colors.green : Colors.orange,
+                size: 18,
+              ),
+              title: Text(
+                tool.displayName,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontFamily: 'monospace',
+                ),
+              ),
+              subtitle: Text(tool.name),
+              trailing: Text(
+                status,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: granted ? Colors.green : Colors.orange,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
 class _ServerSection extends StatefulWidget {
   final McpServer server;
   final bool isConnected;
   final String? sessionId;
   final List<McpTool> tools;
+
   /// null = no action, "connecting" / "disconnecting" / "logging_out" / "oauth_login"
   final String? actionInProgress;
   final VoidCallback onConnect;
@@ -248,11 +447,7 @@ class _ServerSectionState extends State<_ServerSection> {
                     ),
                   )
                 else
-                  Icon(
-                    headerIcon,
-                    color: headerIconColor,
-                    size: 20,
-                  ),
+                  Icon(headerIcon, color: headerIconColor, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -274,9 +469,14 @@ class _ServerSectionState extends State<_ServerSection> {
               valueColor: statusColor,
             ),
             if (widget.sessionId != null)
-              _DetailRow(label: 'Session ID', value: widget.sessionId!, mono: true),
+              _DetailRow(
+                label: 'Session ID',
+                value: widget.sessionId!,
+                mono: true,
+              ),
             _DetailRow(label: 'OAuth', value: widget.server.oauthStatus.name),
-            if (widget.server.headers != null && widget.server.headers!.isNotEmpty)
+            if (widget.server.headers != null &&
+                widget.server.headers!.isNotEmpty)
               _DetailRow(
                 label: 'Headers',
                 value: '${widget.server.headers!.length} configured',
@@ -302,7 +502,8 @@ class _ServerSectionState extends State<_ServerSection> {
                     color: Colors.green,
                     onPressed: widget.onConnect,
                   ),
-                if (!isActionRunning && widget.server.oauthStatus == McpOAuthStatus.authenticated)
+                if (!isActionRunning &&
+                    widget.server.oauthStatus == McpOAuthStatus.authenticated)
                   _ActionButton(
                     icon: Icons.logout,
                     label: 'OAuth Logout',
@@ -328,20 +529,20 @@ class _ServerSectionState extends State<_ServerSection> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Row(
-                children: [
-                  Text(
-                    'Tools (${widget.tools.length})',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  children: [
+                    Text(
+                      'Tools (${widget.tools.length})',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    _toolsExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Icon(
+                      _toolsExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -356,9 +557,7 @@ class _ServerSectionState extends State<_ServerSection> {
                   ),
                 )
               else
-                ...widget.tools.map(
-                  (tool) => _ToolTile(tool: tool),
-                ),
+                ...widget.tools.map((tool) => _ToolTile(tool: tool)),
             ],
           ],
         ),
@@ -385,13 +584,7 @@ class _ActionButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onPressed,
       icon: Icon(icon, size: 16, color: color),
-      label: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 13,
-        ),
-      ),
+      label: Text(label, style: TextStyle(color: color, fontSize: 13)),
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: color.withValues(alpha: 0.5)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -532,9 +725,7 @@ class _ToolTileState extends State<_ToolTile> {
                     ),
                   ),
                   Icon(
-                    _expanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
+                    _expanded ? Icons.expand_less : Icons.expand_more,
                     size: 20,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -596,9 +787,9 @@ class _ToolTileState extends State<_ToolTile> {
       child: Text(
         text,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -671,7 +862,9 @@ class _ParameterRow extends StatelessWidget {
                 child: Text(
                   isRequired ? 'yes' : 'no',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: isRequired ? Colors.orange : theme.colorScheme.onSurfaceVariant,
+                    color: isRequired
+                        ? Colors.orange
+                        : theme.colorScheme.onSurfaceVariant,
                     fontWeight: isRequired ? FontWeight.w600 : null,
                   ),
                 ),

@@ -7,6 +7,7 @@ import '../models/mcp_server.dart';
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._init();
   static Database? _database;
+  static const String _localToolsConfiguredSentinel = '__configured__';
 
   DatabaseService._init();
 
@@ -22,7 +23,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 16,
+      version: 17,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -93,6 +94,19 @@ class DatabaseService {
 
     await db.execute('''
       CREATE INDEX idx_conversation_servers ON conversation_mcp_servers(conversationId)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE conversation_local_tools (
+        conversationId TEXT NOT NULL,
+        localToolId TEXT NOT NULL,
+        PRIMARY KEY (conversationId, localToolId),
+        FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_conversation_local_tools ON conversation_local_tools(conversationId)
     ''');
   }
 
@@ -245,6 +259,19 @@ class DatabaseService {
         ALTER TABLE messages ADD COLUMN uiData TEXT
       ''');
     }
+    if (oldVersion < 17) {
+      await db.execute('''
+        CREATE TABLE conversation_local_tools (
+          conversationId TEXT NOT NULL,
+          localToolId TEXT NOT NULL,
+          PRIMARY KEY (conversationId, localToolId),
+          FOREIGN KEY (conversationId) REFERENCES conversations (id) ON DELETE CASCADE
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX idx_conversation_local_tools ON conversation_local_tools(conversationId)
+      ''');
+    }
   }
 
   // Conversation operations
@@ -326,7 +353,9 @@ class DatabaseService {
     } catch (e) {
       // Fallback: if the batch query still fails (e.g. very large content column),
       // load messages one at a time to avoid CursorWindow overflow.
-      print('Warning: Batch message query failed, falling back to per-message loading: $e');
+      print(
+        'Warning: Batch message query failed, falling back to per-message loading: $e',
+      );
       final idResult = await db.query(
         'messages',
         columns: ['id'],
@@ -358,7 +387,13 @@ class DatabaseService {
   /// Read a single large text column in chunks using SUBSTR() to bypass
   /// Android's ~2MB CursorWindow per-row limit.
   /// Returns null if the column is NULL or the row doesn't exist.
-  Future<String?> _readLargeColumn(Database db, String table, String column, String whereClause, List<Object?> whereArgs) async {
+  Future<String?> _readLargeColumn(
+    Database db,
+    String table,
+    String column,
+    String whereClause,
+    List<Object?> whereArgs,
+  ) async {
     // First get the length
     final lenResult = await db.rawQuery(
       'SELECT LENGTH($column) AS len FROM $table WHERE $whereClause',
@@ -410,7 +445,13 @@ class DatabaseService {
       } catch (e) {
         // Single column exceeds CursorWindow — read in chunks
         try {
-          blobs[column] = await _readLargeColumn(db, 'messages', column, 'id = ?', [messageId]);
+          blobs[column] = await _readLargeColumn(
+            db,
+            'messages',
+            column,
+            'id = ?',
+            [messageId],
+          );
         } catch (e2) {
           print('Warning: Failed to load $column for message $messageId: $e2');
         }
@@ -437,7 +478,9 @@ class DatabaseService {
     } catch (e) {
       // Single column exceeds CursorWindow — read in chunks
       try {
-        return await _readLargeColumn(db, 'messages', 'uiData', 'id = ?', [messageId]);
+        return await _readLargeColumn(db, 'messages', 'uiData', 'id = ?', [
+          messageId,
+        ]);
       } catch (e2) {
         print('Warning: Failed to load uiData for message $messageId: $e2');
       }
@@ -470,9 +513,18 @@ class DatabaseService {
         final lightResult = await db.query(
           'messages',
           columns: [
-            'id', 'conversationId', 'role', 'content', 'timestamp',
-            'reasoning', 'toolCallData', 'toolCallId', 'toolName',
-            'elicitationData', 'notificationData', 'usageData',
+            'id',
+            'conversationId',
+            'role',
+            'content',
+            'timestamp',
+            'reasoning',
+            'toolCallData',
+            'toolCallId',
+            'toolName',
+            'elicitationData',
+            'notificationData',
+            'usageData',
           ],
           where: 'id = ?',
           whereArgs: [messageId],
@@ -500,9 +552,17 @@ class DatabaseService {
           } catch (e) {
             // Single column exceeds CursorWindow — read in chunks
             try {
-              blobValues[column] = await _readLargeColumn(db, 'messages', column, 'id = ?', [messageId]);
+              blobValues[column] = await _readLargeColumn(
+                db,
+                'messages',
+                column,
+                'id = ?',
+                [messageId],
+              );
             } catch (e2) {
-              print('Warning: Failed to load $column for message $messageId: $e2');
+              print(
+                'Warning: Failed to load $column for message $messageId: $e2',
+              );
             }
           }
         }
@@ -655,6 +715,56 @@ class DatabaseService {
     };
   }
 
+  Future<void> setConversationLocalTools(
+    String conversationId,
+    List<String> localToolIds,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'conversation_local_tools',
+        where: 'conversationId = ?',
+        whereArgs: [conversationId],
+      );
+
+      await txn.insert('conversation_local_tools', {
+        'conversationId': conversationId,
+        'localToolId': _localToolsConfiguredSentinel,
+      });
+
+      for (final localToolId in localToolIds) {
+        await txn.insert('conversation_local_tools', {
+          'conversationId': conversationId,
+          'localToolId': localToolId,
+        });
+      }
+    });
+  }
+
+  Future<List<String>> getConversationLocalTools(String conversationId) async {
+    final db = await database;
+    final result = await db.query(
+      'conversation_local_tools',
+      columns: ['localToolId'],
+      where: 'conversationId = ? AND localToolId != ?',
+      whereArgs: [conversationId, _localToolsConfiguredSentinel],
+      orderBy: 'localToolId ASC',
+    );
+    return result.map((row) => row['localToolId'] as String).toList();
+  }
+
+  Future<bool> hasConversationLocalToolSettings(String conversationId) async {
+    final db = await database;
+    final result = await db.query(
+      'conversation_local_tools',
+      columns: ['localToolId'],
+      where: 'conversationId = ? AND localToolId = ?',
+      whereArgs: [conversationId, _localToolsConfiguredSentinel],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
   /// Search conversations by title and message content.
   /// Returns conversations that match the query, ordered by relevance (updatedAt DESC).
   Future<List<Conversation>> searchConversations(String query) async {
@@ -675,5 +785,4 @@ class DatabaseService {
     );
     return result.map((map) => Conversation.fromMap(map)).toList();
   }
-
 }

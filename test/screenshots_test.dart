@@ -18,8 +18,12 @@ import 'package:joey_mcp_client_flutter/widgets/thinking_indicator.dart';
 /// Load Noto Sans and Noto Emoji fonts so golden screenshots render
 /// real readable text instead of Ahem rectangles.
 Future<void> _loadTestFonts() async {
-  final notoSansData = File('test/fonts/NotoSans-Regular.ttf').readAsBytesSync();
-  final notoEmojiData = File('test/fonts/NotoEmoji-Regular.ttf').readAsBytesSync();
+  final notoSansData = File(
+    'test/fonts/NotoSans-Regular.ttf',
+  ).readAsBytesSync();
+  final notoEmojiData = File(
+    'test/fonts/NotoEmoji-Regular.ttf',
+  ).readAsBytesSync();
 
   // Register Noto Sans under all platform font family names that
   // Flutter / Material may resolve to, plus common fallbacks used
@@ -61,18 +65,13 @@ ThemeData get _appDarkTheme => ThemeData(
   ),
   useMaterial3: true,
   scaffoldBackgroundColor: const Color(0xFF0D1117),
-  cardTheme: const CardThemeData(
-    color: Color(0xFF161B22),
-    elevation: 0,
-  ),
+  cardTheme: const CardThemeData(color: Color(0xFF161B22), elevation: 0),
   appBarTheme: const AppBarTheme(
     backgroundColor: Color(0xFF161B22),
     foregroundColor: Colors.white,
     elevation: 0,
   ),
-  dialogTheme: const DialogThemeData(
-    backgroundColor: Color(0xFF1C2128),
-  ),
+  dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF1C2128)),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
     fillColor: const Color(0xFF1C2128),
@@ -176,7 +175,11 @@ List<Message> _nutritionToolMessages() => [
           'arguments': jsonEncode({
             'meal': 'breakfast',
             'items': [
-              {'name': 'Oatmeal with blueberries', 'calories': 310, 'protein': 22},
+              {
+                'name': 'Oatmeal with blueberries',
+                'calories': 310,
+                'protein': 22,
+              },
               {'name': 'Black coffee', 'calories': 5, 'protein': 0},
             ],
           }),
@@ -207,7 +210,8 @@ List<Message> _nutritionToolMessages() => [
     id: 'tc-1',
     conversationId: _conversationId,
     role: MessageRole.user,
-    content: 'I just had a chicken salad for lunch with a glass of orange juice.',
+    content:
+        'I just had a chicken salad for lunch with a glass of orange juice.',
     timestamp: DateTime.now().subtract(const Duration(minutes: 10)),
   ),
   // Tool call (collapsed in non-thinking mode)
@@ -273,7 +277,8 @@ List<Message> _habitTrackingMessages() => [
     id: 'ht-0a',
     conversationId: _conversationId,
     role: MessageRole.user,
-    content: 'Can you set up a habit tracker for me? I want to track meditation, exercise, reading, and journaling.',
+    content:
+        'Can you set up a habit tracker for me? I want to track meditation, exercise, reading, and journaling.',
     timestamp: DateTime.now().subtract(const Duration(minutes: 15)),
   ),
   Message(
@@ -392,10 +397,7 @@ List<Message> _knowledgeBaseMessages() => [
       {
         'id': 'call_pantry',
         'type': 'function',
-        'function': {
-          'name': 'get_pantry',
-          'arguments': jsonEncode({}),
-        },
+        'function': {'name': 'get_pantry', 'arguments': jsonEncode({})},
       },
     ]),
   ),
@@ -495,7 +497,8 @@ List<Message> _mermaidMessages() => [
     id: 'mm-0a',
     conversationId: _conversationId,
     role: MessageRole.user,
-    content: 'I want to optimize my morning routine. Can you help me map it out?',
+    content:
+        'I want to optimize my morning routine. Can you help me map it out?',
     timestamp: DateTime.now().subtract(const Duration(minutes: 8)),
   ),
   Message(
@@ -544,7 +547,8 @@ List<Message> _imageAnalysisMessages() => [
     id: 'ia-0a',
     conversationId: _conversationId,
     role: MessageRole.user,
-    content: 'I\'m planning a hiking trip. Can you help me figure out what gear I need?',
+    content:
+        'I\'m planning a hiking trip. Can you help me figure out what gear I need?',
     timestamp: DateTime.now().subtract(const Duration(minutes: 12)),
   ),
   Message(
@@ -564,13 +568,11 @@ List<Message> _imageAnalysisMessages() => [
     id: 'ia-1',
     conversationId: _conversationId,
     role: MessageRole.user,
-    content: 'Here\'s a photo from the area. What kind of terrain is this and what should I pack?',
+    content:
+        'Here\'s a photo from the area. What kind of terrain is this and what should I pack?',
     timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
     imageData: jsonEncode([
-      {
-        'data': _landscapeImageBase64,
-        'mimeType': 'image/jpeg',
-      },
+      {'data': _landscapeImageBase64, 'mimeType': 'image/jpeg'},
     ]),
   ),
   Message(
@@ -703,11 +705,7 @@ class _MockChatScreen extends StatelessWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
             Row(
               children: [
                 Flexible(
@@ -739,8 +737,9 @@ class _MockChatScreen extends StatelessWidget {
                     child: Text(
                       pricingText!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface
-                            .withValues(alpha: 0.6),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                         fontSize: 11,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -759,9 +758,7 @@ class _MockChatScreen extends StatelessWidget {
             onPressed: () {},
           ),
           IconButton(
-            icon: Icon(
-              showThinking ? Icons.visibility : Icons.visibility_off,
-            ),
+            icon: Icon(showThinking ? Icons.visibility : Icons.visibility_off),
             tooltip: showThinking ? 'Hide thinking' : 'Show thinking',
             onPressed: () {},
           ),
@@ -820,8 +817,9 @@ class _MockChatScreen extends StatelessWidget {
                 Icon(
                   Icons.message_outlined,
                   size: 64,
-                  color: Theme.of(context).colorScheme.primary
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.5),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -865,7 +863,9 @@ class _MockChatScreen extends StatelessWidget {
                 label: const Text('Prompts'),
                 onPressed: () {},
                 side: BorderSide(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.5),
                 ),
               ),
               const SizedBox(width: 8),
@@ -917,7 +917,9 @@ class _MockChatScreen extends StatelessWidget {
               onPressed: () {},
               side: BorderSide(
                 color: mcpServerCount > 0
-                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.5)
                     : Theme.of(context).colorScheme.outlineVariant,
               ),
             ),
@@ -973,7 +975,8 @@ class _MockChatScreen extends StatelessWidget {
       }
 
       // Assistant messages with tool calls - show as collapsed indicator
-      if (message.role == MessageRole.assistant && message.toolCallData != null) {
+      if (message.role == MessageRole.assistant &&
+          message.toolCallData != null) {
         if (!showThinking) {
           displayItems.add(ThinkingIndicator(message: message));
         } else {
@@ -996,14 +999,14 @@ class _MockChatScreen extends StatelessWidget {
                   toolArgs = Map<String, dynamic>.from(toolArgsStr);
                 }
                 if (toolArgs.isNotEmpty) {
-                  final prettyArgs =
-                      const JsonEncoder.withIndent('  ').convert(toolArgs);
+                  final prettyArgs = const JsonEncoder.withIndent(
+                    '  ',
+                  ).convert(toolArgs);
                   toolCallContent +=
                       '\n\nArguments:\n```json\n$prettyArgs\n```';
                 }
               } catch (_) {
-                toolCallContent +=
-                    '\n\nArguments:\n```\n$toolArgsStr\n```';
+                toolCallContent += '\n\nArguments:\n```\n$toolArgsStr\n```';
               }
             }
           } catch (_) {}
@@ -1169,6 +1172,152 @@ class _MockChatScreen extends StatelessWidget {
   }
 }
 
+class _LocalToolsDialogScreenshot extends StatelessWidget {
+  const _LocalToolsDialogScreenshot();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: AlertDialog(
+            title: const Text('New Conversation'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Model',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.smart_toy,
+                        size: 18,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('claude-sonnet-4')),
+                      TextButton(onPressed: () {}, child: const Text('Change')),
+                    ],
+                  ),
+                  const Divider(),
+                  Text(
+                    'MCP Servers',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: true,
+                    onChanged: (_) {},
+                    title: const Text('Personal Assistant MCP'),
+                    subtitle: const Text('https://example.com/mcp'),
+                  ),
+                  const Divider(),
+                  Text(
+                    'Local Device Tools',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Run on this device only. These are separate from remote MCP servers.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _LocalToolScreenshotCard(
+                    title: 'Time',
+                    status: 'Enabled',
+                    tools: const ['Get time'],
+                  ),
+                  _LocalToolScreenshotCard(
+                    title: 'Location',
+                    status: 'Permission required',
+                    tools: const ['Get current location'],
+                  ),
+                  _LocalToolScreenshotCard(
+                    title: 'Message',
+                    status: 'Enabled',
+                    tools: const ['Compose SMS'],
+                  ),
+                  _LocalToolScreenshotCard(
+                    title: 'Calendar',
+                    status: 'Permission required',
+                    tools: const ['Search calendar', 'Create event'],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () {}, child: const Text('Cancel')),
+              TextButton(onPressed: () {}, child: const Text('Start Chat')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalToolScreenshotCard extends StatelessWidget {
+  final String title;
+  final String status;
+  final List<String> tools;
+
+  const _LocalToolScreenshotCard({
+    required this.title,
+    required this.status,
+    required this.tools,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: [
+            ListTile(
+              dense: true,
+              leading: Icon(
+                Icons.phone_iphone,
+                color: theme.colorScheme.tertiary,
+              ),
+              title: Text(title),
+              subtitle: Text(status),
+            ),
+            ...tools.map(
+              (tool) => CheckboxListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 56, right: 8),
+                value: true,
+                onChanged: (_) {},
+                title: Text(tool),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Pre-load mermaid image bytes synchronously at test startup
 /// so Image.memory doesn't trigger async loading during pumpFrames.
 late final Uint8List _mermaidImageBytes;
@@ -1196,8 +1345,10 @@ class _MermaidMessageWidget extends StatelessWidget {
     final afterText = parts.length > 1 ? parts[1].trim() : '';
 
     // Combine into one assistant bubble: text before, diagram, text after
-    final combinedContent = [beforeText, if (afterText.isNotEmpty) afterText]
-        .join('\n\n');
+    final combinedContent = [
+      beforeText,
+      if (afterText.isNotEmpty) afterText,
+    ].join('\n\n');
     final textMessage = message.copyWith(content: combinedContent);
 
     return Column(
@@ -1215,17 +1366,12 @@ class _MermaidMessageWidget extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFF1E1E1E),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
               ),
               clipBehavior: Clip.antiAlias,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Image.memory(
-                  _mermaidImageBytes,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.memory(_mermaidImageBytes, fit: BoxFit.contain),
               ),
             ),
           ),
@@ -1240,7 +1386,9 @@ class _MermaidMessageWidget extends StatelessWidget {
 // ──────────────────────────────────────────────
 
 void main() {
-  _mermaidImageBytes = File('test/assets/morning_routine.png').readAsBytesSync();
+  _mermaidImageBytes = File(
+    'test/assets/morning_routine.png',
+  ).readAsBytesSync();
   _landscapeImageBase64 = base64Encode(
     File('test/assets/mountain_landscape.jpg').readAsBytesSync(),
   );
@@ -1372,6 +1520,11 @@ void main() {
         messages: _imageAnalysisMessages(),
         pricingText: '\$0.003/1K in · \$0.015/1K out',
       ),
+    );
+
+    _screenshotIOS(
+      '7_local_tools_dialog',
+      home: const _LocalToolsDialogScreenshot(),
     );
   });
 
