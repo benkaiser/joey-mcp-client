@@ -34,6 +34,20 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appName"] = "Joey"
+    }
+
+    flavorDimensions += "tier"
+    productFlavors {
+        create("pro") {
+            dimension = "tier"
+            // Uses the default applicationId (com.kaiserapps.joey) and name.
+        }
+        create("free") {
+            dimension = "tier"
+            applicationId = "com.kaiserapps.joey.free"
+            manifestPlaceholders["appName"] = "Joey Free"
+        }
     }
 
     signingConfigs {

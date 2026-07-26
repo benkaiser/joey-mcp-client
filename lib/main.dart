@@ -4,6 +4,8 @@ import 'screens/conversation_list_screen.dart';
 import 'screens/auth_screen.dart';
 import 'providers/conversation_provider.dart';
 import 'services/openrouter_service.dart';
+import 'services/entitlement_service.dart';
+import 'services/iap_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +32,13 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(
           create: (_) => ConversationProvider()..initialize(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => EntitlementService()..initialize(),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              IapService(context.read<EntitlementService>())..initialize(),
         ),
         Provider(create: (_) => OpenRouterService()),
       ],

@@ -15,6 +15,7 @@ import '../services/openrouter_service.dart';
 import '../services/database_service.dart';
 import '../services/conversation_import_export_service.dart';
 import '../widgets/rename_dialog.dart';
+import '../widgets/premium_upsell.dart';
 import 'chat_screen.dart';
 import 'model_picker_screen.dart';
 
@@ -174,6 +175,10 @@ mixin ConversationActionsMixin on State<ChatScreen> {
   }
 
   Future<void> startNewConversation() async {
+    // Free tier: only one conversation is kept; confirm before it is discarded
+    // (or offer upgrade). Premium/non-freemium builds proceed immediately.
+    if (!await PremiumUpsell.gateNewConversation(context)) return;
+    if (!mounted) return;
     final provider = context.read<ConversationProvider>();
 
     // Create a new conversation with the same model as the current one

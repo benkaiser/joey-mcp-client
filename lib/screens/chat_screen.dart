@@ -24,6 +24,7 @@ import '../services/background_chat_manager.dart';
 import '../services/mcp_app_ui_service.dart';
 import '../services/mcp_client_service.dart';
 import '../services/local_tool_service.dart';
+import '../services/entitlement_service.dart';
 import '../utils/audio_attachment_handler.dart';
 import '../utils/image_attachment_handler.dart';
 import 'chat_event_handler.dart';
@@ -297,6 +298,11 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadLocalTools(String conversationId) async {
+    // On-device tools are a premium feature; free users get none.
+    if (!context.read<EntitlementService>().localToolsEnabled) {
+      _localToolService = LocalToolService(enabledToolIds: const {});
+      return;
+    }
     final storedToolIds = await DatabaseService.instance
         .getConversationLocalTools(conversationId);
     final hasLocalToolSettings = await DatabaseService.instance
@@ -1477,6 +1483,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _showMcpServerSelector() async {
+    final localToolsEnabled = context
+        .read<EntitlementService>()
+        .localToolsEnabled;
     final currentServerIds = _serverManager.mcpServers
         .map((s) => s.id)
         .toList();
@@ -1536,7 +1545,9 @@ class _ChatScreenState extends State<ChatScreen>
       result.localToolIds,
     );
     _localToolService = LocalToolService(
-      enabledToolIds: result.localToolIds.toSet(),
+      enabledToolIds: localToolsEnabled
+          ? result.localToolIds.toSet()
+          : const {},
     );
 
     // Reload servers from DB and initialize new ones

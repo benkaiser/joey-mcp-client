@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/mcp_server.dart';
 import '../services/database_service.dart';
 import '../services/local_tool_service.dart';
+import '../services/entitlement_service.dart';
 import '../screens/model_picker_screen.dart';
+import 'premium_upsell.dart';
 
 /// Result returned by [McpServerSelectionDialog] containing the selected MCP
 /// servers and the (possibly overridden) model ID.
@@ -57,9 +60,12 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
     if (widget.initialSelectedServerIds != null) {
       _selectedServerIds.addAll(widget.initialSelectedServerIds!);
     }
-    _selectedLocalToolIds.addAll(
-      widget.initialSelectedLocalToolIds ?? LocalToolService.defaultToolIds,
-    );
+    // Only pre-select local tools when the build/user has premium access.
+    if (context.read<EntitlementService>().localToolsEnabled) {
+      _selectedLocalToolIds.addAll(
+        widget.initialSelectedLocalToolIds ?? LocalToolService.defaultToolIds,
+      );
+    }
     _loadServers();
   }
 
@@ -131,6 +137,47 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
   }
 
   Widget _buildLocalToolsSection(BuildContext context) {
+    final entitlement = context.read<EntitlementService>();
+    if (!entitlement.localToolsEnabled) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Local Device Tools',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.tertiary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: Icon(
+                Icons.lock_outline,
+                color: Theme.of(context).colorScheme.tertiary,
+              ),
+              title: const Text('On-device tools are a Premium feature'),
+              subtitle: const Text(
+                'Time, location, contacts, messages, calendar, reminders, and more',
+              ),
+              trailing: const Icon(
+                Icons.workspace_premium,
+                color: Colors.amber,
+              ),
+              onTap: () => PremiumUpsell.showFeatureLocked(
+                context,
+                title: 'On-device tools',
+                message:
+                    'Local device tools are available with Joey Premium. '
+                    'Upgrade to enable time, location, contacts, messages, '
+                    'calendar, reminders, and more.',
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final supportedTools = LocalToolService.allTools
         .where((tool) => tool.isSupported())
         .toList();
@@ -283,13 +330,30 @@ class _McpServerSelectionDialogState extends State<McpServerSelectionDialog> {
                           ),
                           value: _selectedServerIds.contains(server.id),
                           onChanged: (selected) {
-                            setState(() {
-                              if (selected == true) {
-                                _selectedServerIds.add(server.id);
-                              } else {
-                                _selectedServerIds.remove(server.id);
+                            if (selected == true) {
+                              final entitlement = context
+                                  .read<EntitlementService>();
+                              if (!entitlement.isPremium &&
+                                  _selectedServerIds.isNotEmpty &&
+                                  !_selectedServerIds.contains(server.id) &&
+                                  _selectedServerIds.length >=
+                                      entitlement.maxMcpServers) {
+                                PremiumUpsell.showFeatureLocked(
+                                  context,
+                                  title: 'Multiple MCP servers',
+                                  message:
+                                      'The free version connects one MCP server '
+                                      'per chat. Upgrade to Joey Premium to '
+                                      'connect multiple servers.',
+                                );
+                                return;
                               }
-                            });
+                              setState(() => _selectedServerIds.add(server.id));
+                            } else {
+                              setState(
+                                () => _selectedServerIds.remove(server.id),
+                              );
+                            }
                           },
                         );
                       }),

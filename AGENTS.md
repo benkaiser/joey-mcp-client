@@ -49,6 +49,12 @@ Rendering is delegated to `MessageList` (widget) and `MessageInput` (widget).
 - `flutter test` — unit tests (`test/`)
 - `flutter test integration_test/` — integration tests
 
+### Flavors (free / pro)
+- Android has product flavors `pro` (com.kaiserapps.joey, the existing app) and `free` (com.kaiserapps.joey.free, "Joey Free"). Android builds now require a flavor, e.g. `flutter build appbundle --release --flavor pro`.
+- The free build gates premium features via a compile-time flag: pass `--dart-define=JOEY_FREEMIUM=true` (only official free-store builds). Source builds and the pro flavor default to unlocked. See `EntitlementService` / `kFreemiumEnabled` in `lib/services/entitlement_service.dart`.
+- Free-tier limits: single persisted conversation, single MCP server, no on-device tools. Premium (non-consumable IAP `com.kaiserapps.joey.free.premium`) unlocks all three.
+- Free release builds: `flutter build appbundle --release --flavor free --dart-define=JOEY_FREEMIUM=true` (Android). iOS free flavor requires a matching Xcode scheme/build-config for the `com.kaiserapps.joey.free` bundle id.
+
 ### Conventions
 - Provider for state (not Riverpod), Dio for HTTP, sqflite for storage
 - Models use `toMap()`/`fromMap()` + `copyWith()` for immutability

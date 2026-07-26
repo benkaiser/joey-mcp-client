@@ -77,6 +77,7 @@ dependencies:
   device_calendar: ^4.3.3
   timezone: ^0.9.4
   flutter_timezone: ^5.1.0
+  in_app_purchase: ^3.3.0
 
 dev_dependencies:
   flutter_test:

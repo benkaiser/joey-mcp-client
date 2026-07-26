@@ -1,13 +1,27 @@
 default_platform(:android)
 
 platform :android do
-  desc "Deploy to Google Play production track"
+  desc "Deploy pro app (com.kaiserapps.joey) to Google Play production track"
   lane :deploy do
     upload_to_play_store(
-      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      package_name: "com.kaiserapps.joey",
+      aab: "../build/app/outputs/bundle/proRelease/app-pro-release.aab",
       track: "production",
       skip_upload_metadata: true,
       skip_upload_changelogs: false,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Deploy free app (com.kaiserapps.joey.free) to Google Play production track"
+  lane :deploy_free do
+    upload_to_play_store(
+      package_name: "com.kaiserapps.joey.free",
+      aab: "../build/app/outputs/bundle/freeRelease/app-free-release.aab",
+      track: "production",
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
       skip_upload_images: true,
       skip_upload_screenshots: true
     )

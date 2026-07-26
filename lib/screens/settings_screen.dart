@@ -8,11 +8,13 @@ import 'package:file_picker/file_picker.dart';
 import '../providers/conversation_provider.dart';
 import '../services/openrouter_service.dart';
 import '../services/default_model_service.dart';
+import '../services/entitlement_service.dart';
 import '../services/conversation_import_export_service.dart';
 import '../utils/in_app_browser.dart';
 import '../utils/privacy_constants.dart';
 import 'auth_screen.dart';
 import 'model_picker_screen.dart';
+import 'premium_screen.dart';
 import 'mcp_servers_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -130,6 +132,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
+          // Premium Section (freemium build only)
+          if (context.watch<EntitlementService>().isFreemiumBuild) ...[
+            _buildSectionHeader('Premium'),
+            Builder(
+              builder: (context) {
+                final isPremium = context.watch<EntitlementService>().isPremium;
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: ListTile(
+                    leading: Icon(
+                      isPremium ? Icons.verified : Icons.workspace_premium,
+                      color: isPremium ? Colors.green : Colors.amber,
+                    ),
+                    title: Text(
+                      isPremium ? 'Premium unlocked' : 'Upgrade to Premium',
+                    ),
+                    subtitle: Text(
+                      isPremium
+                          ? 'All premium features are enabled'
+                          : 'Unlimited history, MCP servers, and on-device tools',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PremiumScreen(),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+
           // Default Model Section
           _buildSectionHeader('Default Model'),
           if (_isLoading)

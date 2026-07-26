@@ -1,0 +1,35 @@
+{
+  "identifier" : "A1B2C3D4-0000-0000-0000-JOEYFREEPREM",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "11111111-0000-0000-0000-000000000001",
+      "localizations" : [
+        {
+          "description" : "Unlock unlimited conversation history, unlimited MCP servers, and all on-device tools.",
+          "displayName" : "Joey Premium",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.kaiserapps.joey.free.premium",
+      "referenceName" : "Joey Premium",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "7YUK27P5X7",
+    "_failTransactionsEnabled" : false
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

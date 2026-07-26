@@ -9,6 +9,7 @@ import '../services/default_model_service.dart';
 import '../services/database_service.dart';
 import '../services/background_chat_manager.dart';
 import '../widgets/mcp_server_selection_dialog.dart';
+import '../widgets/premium_upsell.dart';
 import '../utils/date_formatter.dart';
 import 'chat_screen.dart';
 import 'model_picker_screen.dart';
@@ -256,6 +257,10 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ),
           floatingActionButton: FloatingActionButton(
             onPressed: () async {
+              // Free tier: only one conversation is kept; confirm before it is
+              // discarded (or offer upgrade).
+              if (!await PremiumUpsell.gateNewConversation(context)) return;
+              if (!context.mounted) return;
               // Check for default model
               final defaultModel = await DefaultModelService.getDefaultModel();
 
