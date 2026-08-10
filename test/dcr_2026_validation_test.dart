@@ -4,7 +4,6 @@
 // structured tool results) exercised through Joey's real McpClientService
 // against a strict `require2026` Streamable HTTP server.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
