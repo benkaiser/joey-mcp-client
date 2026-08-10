@@ -306,11 +306,45 @@ class McpOAuthManager extends ChangeNotifier {
       serverOAuthStatus[server.id] = McpOAuthCardStatus.inProgress;
       notifyListeners();
 
+      // If no client ID is configured, attempt Dynamic Client Registration
+      // (RFC 7591). Persist the resulting credentials so we register only once.
+      var effectiveServer = server;
+      if (effectiveServer.oauthClientId == null ||
+          effectiveServer.oauthClientId!.isEmpty) {
+        try {
+          final registration = await _mcpOAuthService.registerClient(
+            serverUrl: effectiveServer.url,
+          );
+          if (registration != null) {
+            effectiveServer = effectiveServer.copyWith(
+              oauthClientId: registration.clientId,
+              oauthClientSecret: registration.clientSecret,
+              updatedAt: DateTime.now(),
+            );
+            await DatabaseService.instance.updateMcpServer(effectiveServer);
+
+            // Reflect the persisted credentials in the in-memory list so the
+            // callback handler can read the client secret during token exchange.
+            final idx = mcpServers.indexWhere((s) => s.id == server.id);
+            if (idx >= 0) {
+              mcpServers[idx] = effectiveServer;
+            }
+
+            // Recreate the provider so token refresh uses the registered
+            // client_id/secret rather than the stale null values.
+            oauthProviders[server.id] = createOAuthProvider(effectiveServer);
+          }
+        } catch (e) {
+          // DCR is best-effort: fall through to manual/static client handling.
+          debugPrint('MCP DCR failed for ${server.name}: $e');
+        }
+      }
+
       // Build and launch auth URL via ASWebAuthenticationSession / Auth Tab
       final authUrl = await _mcpOAuthService.buildAuthorizationUrl(
-        serverUrl: server.url,
-        clientId: server.oauthClientId,
-        clientSecret: server.oauthClientSecret,
+        serverUrl: effectiveServer.url,
+        clientId: effectiveServer.oauthClientId,
+        clientSecret: effectiveServer.oauthClientSecret,
       );
 
       final uri = Uri.parse(authUrl);

@@ -401,6 +401,7 @@ class McpClientService {
     print('  isFormMode: ${request.isFormMode}');
     print('  message: ${request.message}');
     print('  url: ${request.url}');
+    // ignore: deprecated_member_use
     print('  elicitationId: ${request.elicitationId}');
     print('  requestedSchema: ${request.requestedSchema?.toJson()}');
 
@@ -426,6 +427,7 @@ class McpClientService {
             ? app_elicitation.ElicitationMode.url
             : app_elicitation.ElicitationMode.form,
         message: request.message,
+        // ignore: deprecated_member_use
         elicitationId: request.elicitationId,
         url: request.url,
         requestedSchema: request.requestedSchema?.toJson(),
@@ -826,15 +828,6 @@ class McpClientService {
       _client = null;
       _transport = null;
     }
-  }
-
-  /// Complete OAuth flow after user authorization
-  /// Call this after the user has authorized and you have the authorization code
-  Future<void> finishAuth(String authorizationCode) async {
-    if (_transport == null) {
-      throw Exception('Transport not initialized');
-    }
-    await _transport!.finishAuth(authorizationCode);
   }
 
   /// Get the OAuth provider (for checking auth status)

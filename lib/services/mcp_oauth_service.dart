@@ -197,9 +197,16 @@ class McpOAuthException implements Exception {
   String toString() => 'McpOAuthException: $message${code != null ? ' (code: $code)' : ''}';
 }
 
+/// Credentials returned by Dynamic Client Registration (RFC 7591).
+class McpDcrRegistration {
+  final String clientId;
+  final String? clientSecret;
+
+  McpDcrRegistration({required this.clientId, this.clientSecret});
+}
+
 /// Result from checking if server requires OAuth
-class McpAuthCheckResult {
-  final bool requiresAuth;
+class McpAuthCheckResult {  final bool requiresAuth;
   final String? resourceMetadataUrl;
   final String? requiredScope;
   final Map<String, String>? wwwAuthenticateParams;
@@ -448,6 +455,96 @@ class McpOAuthService {
     final random = Random.secure();
     final bytes = List<int>.generate(32, (_) => random.nextInt(256));
     return base64Url.encode(bytes).replaceAll('=', '');
+  }
+
+  /// Perform OAuth 2.0 Dynamic Client Registration (RFC 7591) if the
+  /// authorization server advertises a `registration_endpoint`.
+  ///
+  /// Returns the registered credentials, or `null` when the server does not
+  /// support DCR (in which case the caller should fall back to a manually
+  /// configured client ID). Throws [McpOAuthException] if a registration
+  /// endpoint exists but registration fails.
+  ///
+  /// This is preferred over relying on the transport's built-in DCR because
+  /// mcp_dart never surfaces the registered `client_id` for persistence, so it
+  /// would re-register on every fresh login. Registering here lets us persist
+  /// the credentials on the [McpServer] and register only once.
+  Future<McpDcrRegistration?> registerClient({
+    required String serverUrl,
+    String? scope,
+  }) async {
+    final prMetadata = await discoverProtectedResourceMetadata(serverUrl);
+    if (prMetadata.authorizationServers.isEmpty) {
+      throw McpOAuthException('No authorization servers found for $serverUrl');
+    }
+
+    final authServerUrl = prMetadata.authorizationServers.first;
+    final asMetadata = await discoverAuthServerMetadata(authServerUrl);
+
+    final registrationEndpoint = asMetadata.registrationEndpoint;
+    if (registrationEndpoint == null || registrationEndpoint.isEmpty) {
+      // Server does not support DCR; caller falls back to manual/static client.
+      return null;
+    }
+
+    final effectiveScope = scope ??
+        prMetadata.scopesSupported?.join(' ') ??
+        asMetadata.scopesSupported?.join(' ');
+
+    try {
+      final response = await _dio.post(
+        registrationEndpoint,
+        data: jsonEncode({
+          'client_name': 'Joey',
+          'redirect_uris': [_redirectUri],
+          'grant_types': ['authorization_code', 'refresh_token'],
+          'response_types': ['code'],
+          // Public client using PKCE — no client authentication by default.
+          'token_endpoint_auth_method': 'none',
+          if (effectiveScope != null && effectiveScope.isNotEmpty)
+            'scope': effectiveScope,
+        }),
+        options: Options(
+          contentType: Headers.jsonContentType,
+          responseType: ResponseType.plain,
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+
+      final rawResponse = response.data.toString();
+      final data = _parseTokenResponse(response.data);
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final error = data['error'] as String?;
+        final errorDesc = data['error_description'] as String?;
+        throw McpOAuthException(
+          'Dynamic client registration failed: '
+          '${errorDesc ?? error ?? 'HTTP ${response.statusCode}'}. '
+          'Raw response: $rawResponse',
+          code: error,
+          httpStatus: response.statusCode,
+        );
+      }
+
+      final clientId = data['client_id'] as String?;
+      if (clientId == null || clientId.isEmpty) {
+        throw McpOAuthException(
+          'Dynamic client registration response missing client_id. '
+          'Raw response: $rawResponse',
+          code: 'invalid_response',
+        );
+      }
+
+      return McpDcrRegistration(
+        clientId: clientId,
+        clientSecret: data['client_secret'] as String?,
+      );
+    } on DioException catch (e) {
+      throw McpOAuthException(
+        'Dynamic client registration failed: ${e.message}',
+        httpStatus: e.response?.statusCode,
+      );
+    }
   }
 
   /// Build the authorization URL to redirect the user to

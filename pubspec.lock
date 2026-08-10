@@ -1026,12 +1026,11 @@ packages:
   mcp_dart:
     dependency: "direct main"
     description:
-      path: "."
-      ref: main
-      resolved-ref: "45656bcffa9e4a795d93cdffad7455c89961cb53"
-      url: "https://github.com/benkaiser/mcp_dart.git"
-    source: git
-    version: "1.2.2"
+      name: mcp_dart
+      sha256: "66a17878b76faee9655b8f74e9852fa9f2811e26a9aa8ec2ac2637f0324be3e8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.0"
   meta:
     dependency: transitive
     description:
