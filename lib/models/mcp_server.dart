@@ -88,6 +88,10 @@ class McpServer {
   /// Optional client secret for OAuth (not recommended - only for providers that don't support PKCE)
   final String? oauthClientSecret;
 
+  /// Optional custom system prompt appended to the global system prompt
+  /// whenever this server is connected to a conversation.
+  final String? systemPrompt;
+
   McpServer({
     required this.id,
     required this.name,
@@ -100,6 +104,7 @@ class McpServer {
     this.oauthTokens,
     this.oauthClientId,
     this.oauthClientSecret,
+    this.systemPrompt,
   });
 
   /// Check if this server requires OAuth and is not yet authenticated
@@ -127,6 +132,7 @@ class McpServer {
       'oauthTokens': oauthTokens?.encode(),
       'oauthClientId': oauthClientId,
       'oauthClientSecret': oauthClientSecret,
+      'systemPrompt': systemPrompt,
     };
   }
 
@@ -143,6 +149,7 @@ class McpServer {
       oauthTokens: McpServerOAuthTokens.decode(map['oauthTokens'] as String?),
       oauthClientId: map['oauthClientId'] as String?,
       oauthClientSecret: map['oauthClientSecret'] as String?,
+      systemPrompt: map['systemPrompt'] as String?,
     );
   }
 
@@ -167,7 +174,9 @@ class McpServer {
     McpServerOAuthTokens? oauthTokens,
     String? oauthClientId,
     String? oauthClientSecret,
+    String? systemPrompt,
     bool clearOAuthTokens = false,
+    bool clearSystemPrompt = false,
   }) {
     return McpServer(
       id: id ?? this.id,
@@ -181,6 +190,9 @@ class McpServer {
       oauthTokens: clearOAuthTokens ? null : (oauthTokens ?? this.oauthTokens),
       oauthClientId: oauthClientId ?? this.oauthClientId,
       oauthClientSecret: oauthClientSecret ?? this.oauthClientSecret,
+      systemPrompt: clearSystemPrompt
+          ? null
+          : (systemPrompt ?? this.systemPrompt),
     );
   }
 

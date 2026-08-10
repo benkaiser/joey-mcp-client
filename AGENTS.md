@@ -7,7 +7,7 @@
 
 ### Tech Stack
 - **Flutter** (iOS, Android, macOS, Windows, Linux) — Dart SDK ^3.10.7
-- **State**: Provider — **DB**: sqflite (schema v17) — **HTTP**: Dio
+- **State**: Provider — **DB**: sqflite (schema v18) — **HTTP**: Dio
 - **LLM**: OpenRouter (PKCE OAuth, SSE streaming) — **MCP**: `mcp_dart` (Streamable HTTP)
 
 ## Architecture
@@ -53,7 +53,8 @@ Rendering is delegated to `MessageList` (widget) and `MessageInput` (widget).
 - Android has product flavors `pro` (com.kaiserapps.joey, the existing app) and `free` (com.kaiserapps.joey.free, "Joey Free"). Android builds now require a flavor, e.g. `flutter build appbundle --release --flavor pro`.
 - The free build gates premium features via a compile-time flag: pass `--dart-define=JOEY_FREEMIUM=true` (only official free-store builds). Source builds and the pro flavor default to unlocked. See `EntitlementService` / `kFreemiumEnabled` in `lib/services/entitlement_service.dart`.
 - Free-tier limits: single persisted conversation, single MCP server, no on-device tools. Premium (non-consumable IAP `com.kaiserapps.joey.free.premium`) unlocks all three.
-- Free release builds: `flutter build appbundle --release --flavor free --dart-define=JOEY_FREEMIUM=true` (Android). iOS free flavor requires a matching Xcode scheme/build-config for the `com.kaiserapps.joey.free` bundle id.
+- Free release builds: `flutter build appbundle --release --flavor free --dart-define=JOEY_FREEMIUM=true` (Android) and `flutter build ipa --flavor free --dart-define=JOEY_FREEMIUM=true` (iOS). The iOS `free` flavor uses a shared Xcode `free` scheme + `Debug/Release/Profile-free` build configs that set `PRODUCT_BUNDLE_IDENTIFIER=com.kaiserapps.joey.free` and `APP_DISPLAY_NAME="Joey Free"` (Info.plist reads `CFBundleDisplayName` from `$(APP_DISPLAY_NAME)`). The pro iOS build stays the default `Runner` scheme (`flutter build ipa --release`, no flavor).
+- Free-tier MCP limit is enforced globally in `mcp_servers_screen.dart`: free users can configure only ONE MCP server total (adding a 2nd shows the paywall); they must edit/remove the existing one to switch.
 
 ### Conventions
 - Provider for state (not Riverpod), Dio for HTTP, sqflite for storage
@@ -62,6 +63,7 @@ Rendering is delegated to `MessageList` (widget) and `MessageInput` (widget).
 - Widgets receive data and callbacks via constructor — no direct service access
 
 ### Gotchas
+- The effective system prompt is the global one (Settings, `DefaultModelService.getSystemPrompt()`) plus the optional `systemPrompt` of each *connected* MCP server, joined with newlines — see `ChatService.buildSystemPrompt()`
 - `ChatService` queues MCP notifications during streaming, flushes after each LLM response
 - `MessageList` uses a **reversed** `ListView` — index 0 is the bottom (newest). Streaming content is frozen when user scrolls up to prevent position shifting.
 - Streaming chunks use special prefixes: `TOOL_CALLS:` for tool calls, `REASONING:` for thinking content

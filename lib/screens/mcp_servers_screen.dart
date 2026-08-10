@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/mcp_server.dart';
 import '../services/database_service.dart';
+import '../services/entitlement_service.dart';
 import '../services/mcp_ping_service.dart';
 import '../utils/in_app_browser.dart';
 import '../utils/privacy_constants.dart';
+import '../widgets/premium_upsell.dart';
 
 class McpServersScreen extends StatefulWidget {
   const McpServersScreen({super.key});
@@ -132,6 +135,22 @@ class _McpServersScreenState extends State<McpServersScreen> {
   }
 
   Future<void> _showAddEditDialog([McpServer? server]) async {
+    // Free tier: cap the total number of configured MCP servers.
+    if (server == null) {
+      final entitlement = context.read<EntitlementService>();
+      if (_servers.length >= entitlement.maxMcpServers) {
+        await PremiumUpsell.showFeatureLocked(
+          context,
+          title: 'One server on the free plan',
+          message:
+              'The free version lets you configure a single MCP server. '
+              'Remove or edit your existing server to switch, or upgrade to '
+              'Premium to connect unlimited MCP servers.',
+        );
+        return;
+      }
+    }
+
     // Show one-time data sharing consent before adding a new server
     if (server == null) {
       final prefs = await SharedPreferences.getInstance();
@@ -369,6 +388,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _headersController;
+  late final TextEditingController _systemPromptController;
   late final TextEditingController _oauthClientIdController;
   late final TextEditingController _oauthClientSecretController;
 
@@ -389,6 +409,9 @@ class _McpServerDialogState extends State<_McpServerDialog> {
               .map((e) => '${e.key}: ${e.value}')
               .join('\n') ??
           '',
+    );
+    _systemPromptController = TextEditingController(
+      text: widget.server?.systemPrompt ?? '',
     );
     _oauthClientIdController = TextEditingController(
       text: widget.server?.oauthClientId ?? '',
@@ -413,6 +436,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
     _nameController.dispose();
     _urlController.dispose();
     _headersController.dispose();
+    _systemPromptController.dispose();
     _oauthClientIdController.dispose();
     _oauthClientSecretController.dispose();
     super.dispose();
@@ -486,6 +510,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
     final now = DateTime.now();
     final oauthClientId = _oauthClientIdController.text.trim();
     final oauthClientSecret = _oauthClientSecretController.text.trim();
+    final systemPrompt = _systemPromptController.text.trim();
 
     final server = McpServer(
       id: widget.server?.id ?? const Uuid().v4(),
@@ -501,6 +526,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
           : null,
       oauthStatus: widget.server?.oauthStatus ?? McpOAuthStatus.none,
       oauthTokens: widget.server?.oauthTokens,
+      systemPrompt: systemPrompt.isNotEmpty ? systemPrompt : null,
     );
 
     Navigator.pop(context, server);
@@ -615,6 +641,21 @@ class _McpServerDialogState extends State<_McpServerDialog> {
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _systemPromptController,
+              decoration: const InputDecoration(
+                labelText: 'System Prompt (optional)',
+                hintText: 'Extra instructions for when this server is connected',
+                border: OutlineInputBorder(),
+                helperText:
+                    'Appended to your global system prompt while this server is connected',
+                helperMaxLines: 3,
+              ),
+              maxLines: 4,
+              minLines: 2,
+              keyboardType: TextInputType.multiline,
             ),
             const SizedBox(height: 24),
             // OAuth Configuration Section

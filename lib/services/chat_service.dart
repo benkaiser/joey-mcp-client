@@ -46,6 +46,7 @@ class ChatService {
   final Map<String, McpClientService> _mcpClients;
   final Map<String, List<McpTool>> _mcpTools;
   final Map<String, String> _serverNames; // serverId -> server name
+  final Map<String, String> _serverSystemPrompts; // serverId -> system prompt
   McpAppUiService? _uiService;
   final Map<String, List<McpTool>> _appOnlyTools;
   LocalToolService? _localToolService;
@@ -56,6 +57,7 @@ class ChatService {
     required Map<String, McpClientService> mcpClients,
     required Map<String, List<McpTool>> mcpTools,
     Map<String, String>? serverNames,
+    Map<String, String>? serverSystemPrompts,
     McpAppUiService? uiService,
     Map<String, List<McpTool>>? appOnlyTools,
     LocalToolService? localToolService,
@@ -63,6 +65,7 @@ class ChatService {
        _mcpClients = mcpClients,
        _mcpTools = mcpTools,
        _serverNames = serverNames ?? {},
+       _serverSystemPrompts = serverSystemPrompts ?? {},
        _uiService = uiService,
        _appOnlyTools = appOnlyTools ?? {},
        _localToolService = localToolService {
@@ -156,6 +159,7 @@ class ChatService {
     required Map<String, McpClientService> mcpClients,
     required Map<String, List<McpTool>> mcpTools,
     required Map<String, String> serverNames,
+    Map<String, String>? serverSystemPrompts,
     McpAppUiService? uiService,
     Map<String, List<McpTool>>? appOnlyTools,
     LocalToolService? localToolService,
@@ -163,6 +167,12 @@ class ChatService {
     // Update server names
     _serverNames.clear();
     _serverNames.addAll(serverNames);
+
+    // Update per-server custom system prompts
+    _serverSystemPrompts.clear();
+    if (serverSystemPrompts != null) {
+      _serverSystemPrompts.addAll(serverSystemPrompts);
+    }
 
     // Register handlers for all clients (instance may have been replaced
     // e.g. after session re-initialization in McpServerManager).
@@ -340,6 +350,24 @@ class ChatService {
     );
   }
 
+  /// Build the effective system prompt: the user's global system prompt with
+  /// the custom system prompts of any connected MCP servers appended,
+  /// joined by newlines.
+  Future<String> buildSystemPrompt() async {
+    final basePrompt = await DefaultModelService.getSystemPrompt();
+    final parts = <String>[
+      if (basePrompt.trim().isNotEmpty) basePrompt.trim(),
+    ];
+    for (final entry in _serverSystemPrompts.entries) {
+      // Only include prompts for servers that are currently connected
+      if (!_mcpClients.containsKey(entry.key)) continue;
+      final prompt = entry.value.trim();
+      if (prompt.isEmpty) continue;
+      parts.add(prompt);
+    }
+    return parts.join('\n');
+  }
+
   /// Run the agentic loop for a conversation
   Future<void> runAgenticLoop({
     required String conversationId,
@@ -352,8 +380,8 @@ class ChatService {
     final bool unlimited = maxIterations <= 0;
     int iterationCount = 0;
 
-    // Get system prompt
-    final systemPrompt = await DefaultModelService.getSystemPrompt();
+    // Get system prompt (global prompt + any per-server custom prompts)
+    final systemPrompt = await buildSystemPrompt();
 
     // Create a new cancel token for this request
     _cancelToken = CancelToken();

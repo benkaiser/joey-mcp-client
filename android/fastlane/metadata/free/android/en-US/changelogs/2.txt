@@ -1,0 +1,8 @@
+Welcome to Joey MCP Client Lite!
+
+• Chat with any AI model via OpenRouter or your own OpenAI-compatible endpoint
+• Connect an MCP server to extend the AI with external tools and services
+• Send images to vision-capable models from your camera, gallery, or clipboard
+• Advanced MCP support: sampling and interactive elicitation
+
+Upgrade to Premium (one-time purchase) for unlimited conversation history, unlimited MCP servers, and all on-device tools.

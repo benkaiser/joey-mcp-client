@@ -5,11 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golden_screenshot/golden_screenshot.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:joey_mcp_client_flutter/models/conversation.dart';
 import 'package:joey_mcp_client_flutter/models/message.dart';
+import 'package:joey_mcp_client_flutter/screens/premium_screen.dart';
+import 'package:joey_mcp_client_flutter/services/entitlement_service.dart';
+import 'package:joey_mcp_client_flutter/services/iap_service.dart';
 import 'package:joey_mcp_client_flutter/utils/date_formatter.dart';
 import 'package:joey_mcp_client_flutter/widgets/message_bubble.dart';
 import 'package:joey_mcp_client_flutter/widgets/thinking_indicator.dart';
+import 'package:provider/provider.dart';
 
 // ──────────────────────────────────────────────
 // Font loading for readable golden screenshots
@@ -1381,6 +1386,58 @@ class _MermaidMessageWidget extends StatelessWidget {
   }
 }
 
+/// Renders the real [PremiumScreen] paywall with fake providers so it shows
+/// the not-yet-purchased state with a loaded price. Used for the App Store
+/// in-app-purchase review screenshot.
+class _PremiumScreenScreenshot extends StatelessWidget {
+  const _PremiumScreenScreenshot();
+
+  @override
+  Widget build(BuildContext context) {
+    // freemiumOverride: true + no purchase => isPremium == false => paywall.
+    final entitlement = EntitlementService(freemiumOverride: true);
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<EntitlementService>.value(value: entitlement),
+        ChangeNotifierProvider<IapService>.value(
+          value: _FakeIapService(entitlement),
+        ),
+      ],
+      child: const PremiumScreen(),
+    );
+  }
+}
+
+/// A test double for [IapService] that reports an available store with a
+/// loaded price, without touching the platform in-app-purchase plugin.
+class _FakeIapService extends IapService {
+  _FakeIapService(super.entitlement);
+
+  static final ProductDetails _fakeProduct = ProductDetails(
+    id: EntitlementService.premiumProductId,
+    title: 'Joey Premium',
+    description: 'Unlock all premium features',
+    price: '\$4.99',
+    rawPrice: 4.99,
+    currencyCode: 'USD',
+  );
+
+  @override
+  bool get isStoreAvailable => true;
+
+  @override
+  bool get isPurchaseInProgress => false;
+
+  @override
+  ProductDetails? get premiumProduct => _fakeProduct;
+
+  @override
+  String? get priceString => _fakeProduct.price;
+
+  @override
+  String? get lastError => null;
+}
+
 // ──────────────────────────────────────────────
 // Screenshot tests
 // ──────────────────────────────────────────────
@@ -1526,6 +1583,11 @@ void main() {
       '7_local_tools_dialog',
       home: const _LocalToolsDialogScreenshot(),
     );
+
+    _screenshotIOS(
+      '8_premium_paywall',
+      home: const _PremiumScreenScreenshot(),
+    );
   });
 
   group('Mac App Store Screenshots:', () {
@@ -1599,10 +1661,11 @@ void _screenshot(
   required Widget home,
   ScreenshotFrameColors? frameColors,
 }) {
-  // Generate for both Android phone and tablet (Play Store)
-  final goldenDevices = [
-    GoldenScreenshotDevices.androidPhone,
-    GoldenScreenshotDevices.androidTablet,
+  // Generate Android phone, 7-inch tablet, and 10-inch tablet (Play Store).
+  final goldenDevices = <({String name, ScreenshotDevice device})>[
+    (name: 'phone', device: _androidPhone),
+    (name: 'sevenInch', device: _sevenInchTablet),
+    (name: 'tenInch', device: _tenInchTablet),
   ];
 
   for (final goldenDevice in goldenDevices) {
@@ -1641,6 +1704,111 @@ const _iphone65 = ScreenshotDevice(
   pixelRatio: 3,
   goldenSubFolder: 'iphone65Screenshots/',
   frameBuilder: ScreenshotFrame.iphone,
+);
+
+// Custom 7-inch Android tablet (portrait) for the Play Store 7" slot.
+// Logical 600x1024 at 2x — a classic small-tablet size, distinct from the
+// built-in androidTablet (10-inch, 16:9 landscape).
+const _sevenInchTablet = ScreenshotDevice(
+  platform: TargetPlatform.android,
+  resolution: Size(1200, 2048),
+  pixelRatio: 2,
+  goldenSubFolder: 'sevenInchScreenshots/',
+  frameBuilder: _androidFrameNoGestureBar,
+);
+
+/// Builds an Android frame that keeps the system status bar (top) but omits
+/// the system gesture pill (bottom), which is usually hidden/minimal on real
+/// devices and just adds clutter to store screenshots.
+///
+/// The status bar is rendered as a real widget row (clock on the left, system
+/// icons on the right) rather than a fixed-size bitmap, so the icons stay
+/// pinned to the screen edges at any width — phone or tablet.
+Widget _androidFrameNoGestureBar({
+  required ScreenshotDevice device,
+  required ScreenshotFrameColors? frameColors,
+  required Widget child,
+}) {
+  return _AndroidStatusBarFrame(child: child);
+}
+
+class _AndroidStatusBarFrame extends StatelessWidget {
+  const _AndroidStatusBarFrame({required this.child});
+
+  final Widget child;
+
+  static const double _barHeight = 52;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    const viewPadding = EdgeInsets.only(top: _barHeight);
+    // Icons/text are white to read on the app's dark theme surfaces.
+    const fg = Colors.white;
+
+    return MediaQuery(
+      data: mediaQuery.copyWith(padding: viewPadding, viewPadding: viewPadding),
+      child: Stack(
+        children: [
+          child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: _barHeight,
+            child: Material(
+              type: MaterialType.transparency,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text(
+                      '9:41',
+                      style: TextStyle(
+                        color: fg,
+                        fontFamily: 'Roboto',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.signal_cellular_alt, color: fg, size: 20),
+                        SizedBox(width: 8),
+                        Icon(Icons.wifi, color: fg, size: 20),
+                        SizedBox(width: 8),
+                        Icon(Icons.battery_full, color: fg, size: 22),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Android phone (Pixel 9 Pro resolution) with the system gesture pill removed.
+const _androidPhone = ScreenshotDevice(
+  platform: TargetPlatform.android,
+  resolution: Size(1280, 2856),
+  pixelRatio: 3,
+  goldenSubFolder: 'phoneScreenshots/',
+  frameBuilder: _androidFrameNoGestureBar,
+);
+
+// 10-inch Android tablet (portrait) with the system gesture pill removed.
+const _tenInchTablet = ScreenshotDevice(
+  platform: TargetPlatform.android,
+  resolution: Size(1600, 2560),
+  pixelRatio: 2,
+  goldenSubFolder: 'tenInchScreenshots/',
+  frameBuilder: _androidFrameNoGestureBar,
 );
 
 void _screenshotMac(

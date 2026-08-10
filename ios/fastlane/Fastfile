@@ -36,4 +36,20 @@ platform :ios do
       skip_waiting_for_build_processing: true
     )
   end
+
+  desc "Upload the free flavor to TestFlight (com.kaiserapps.joey.free)"
+  lane :beta_free do
+    api_key = app_store_connect_api_key(
+      key_id: "L2XRGXQYP6",
+      issuer_id: "375bd958-10b5-4bcd-b556-44925a5192a9",
+      key_filepath: "~/.config/appstore/AuthKey_L2XRGXQYP6.p8"
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: "com.kaiserapps.joey.free",
+      ipa: "../build/ios/ipa/Joey.ipa",
+      skip_waiting_for_build_processing: true
+    )
+  end
 end

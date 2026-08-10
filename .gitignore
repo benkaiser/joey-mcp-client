@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local-only store assets & app-store reviewer notes (contain a test-account API key)
+store/

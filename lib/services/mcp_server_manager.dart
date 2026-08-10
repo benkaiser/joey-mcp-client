@@ -300,6 +300,19 @@ class McpServerManager extends ChangeNotifier {
     return names;
   }
 
+  /// Custom system prompts configured for the conversation's MCP servers.
+  /// Servers without a custom prompt are omitted. ChatService filters these
+  /// down to servers that are actually connected.
+  Map<String, String> get serverSystemPrompts {
+    final prompts = <String, String>{};
+    for (final server in mcpServers) {
+      final prompt = server.systemPrompt?.trim();
+      if (prompt == null || prompt.isEmpty) continue;
+      prompts[server.id] = prompt;
+    }
+    return prompts;
+  }
+
   /// Disconnect a specific server: close client, clear tools/session, notify.
   Future<void> disconnectServer(String serverId, String conversationId) async {
     // Look up server name before removing

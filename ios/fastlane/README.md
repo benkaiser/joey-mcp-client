@@ -31,13 +31,13 @@ Upload to App Store Connect via TestFlight / App Store
 
 Upload to TestFlight
 
-### ios submit_build_12
+### ios beta_free
 
 ```sh
-[bundle exec] fastlane ios submit_build_12
+[bundle exec] fastlane ios beta_free
 ```
 
-Submit already-uploaded App Store build 12
+Upload the free flavor to TestFlight (com.kaiserapps.joey.free)
 
 ----
 

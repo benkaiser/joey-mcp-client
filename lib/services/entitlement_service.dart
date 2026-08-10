@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Compile-time freemium flag.
 ///
-/// Only official "Joey Free" store release builds pass
+/// Only official "Joey Lite" store release builds pass
 /// `--dart-define=JOEY_FREEMIUM=true`. Anyone building from source, and the
 /// full "pro" flavor, leave this at its default of `false`, which unlocks
 /// every feature. This keeps the open-source build fully functional while

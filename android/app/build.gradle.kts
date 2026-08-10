@@ -46,7 +46,7 @@ android {
         create("free") {
             dimension = "tier"
             applicationId = "com.kaiserapps.joey.free"
-            manifestPlaceholders["appName"] = "Joey Free"
+            manifestPlaceholders["appName"] = "Joey Lite"
         }
     }
 

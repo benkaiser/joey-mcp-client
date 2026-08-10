@@ -23,7 +23,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -77,7 +77,8 @@ class DatabaseService {
         oauthStatus TEXT DEFAULT 'none',
         oauthTokens TEXT,
         oauthClientId TEXT,
-        oauthClientSecret TEXT
+        oauthClientSecret TEXT,
+        systemPrompt TEXT
       )
     ''');
 
@@ -270,6 +271,12 @@ class DatabaseService {
       ''');
       await db.execute('''
         CREATE INDEX idx_conversation_local_tools ON conversation_local_tools(conversationId)
+      ''');
+    }
+    if (oldVersion < 18) {
+      // Add optional per-server system prompt appended to the global prompt
+      await db.execute('''
+        ALTER TABLE mcp_servers ADD COLUMN systemPrompt TEXT
       ''');
     }
   }
